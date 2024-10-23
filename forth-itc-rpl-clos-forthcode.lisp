@@ -6,38 +6,46 @@
 
 ;; ------------------------------------------------------
 ;; forth
-
 (initialize)
 
+;; --------------------------------------------
 ;; VOCABULARY FORTH
-(let* ((v   (vocabulary forth))
-       (dfa (fw-dfa v)))
-  ;; (!fcell dfa v)
-  (!fcell *context* dfa)
-  (!fcell *current* dfa))
+
+(let ((v  (make-instance '<vocabulary>
+                         :nfa  "FORTH"
+                         :lfa  nil)))
+  (setf *tic-forth*   v
+        (current-voc) v
+        (context-voc) v))
+
+;; --------------------------------------------
 
 (const nil       nil)
 (const t         t)
 (const bl        #\space)
 (const newline   #\newline)
 
+;; --------------------------------------------
+
 (code context
-  (push *context* *pstack*))
+  (sp-! *context*))
 
 (code current
-  (push *current* *pstack*))
+  (sp-! *current*))
 
 (code compiling
-  (push *compiling* *pstack*))
+  (sp-! *compiling*))
 
 (code base
-  (push *base* *pstack*))
-  
+  (sp-! *base*))
+
+;; --------------------------------------------
+
 (code literal
-  (push (pop *reg-i*) *pstack*))
+  (sp-! ip@+))
 
 (code exit
-  (setf *reg-i* (pop *rstack*)))
+  (ip! rp@+))
 
 ;; CNOP -- a replaceable nop
 ;; we need a placeholder in some cases
@@ -67,38 +75,41 @@
                    complex mod rem (truncate-by truncate) (floor-by floor)
                    (ceiling-by ceiling) (round-by round)
                    = < <= >= > /= eq equal eql equalp max min
-                   (and logand) (or logior) (xor logxor) aref)
+                   (and logand) (or logior) (xor logxor) aref cons)
 ;; -------------------------------------------------------------------
 
+(code skip-to-eol
+  (skip-to-eol))
+  
 (code word
-  (let* ((delim (car *pstack*))
+  (let* ((delim tos)
          (w     (next-word delim)))
     ;; (format t "~&word = ~S" w)
-    (setf (car *pstack*) w)))
+    (setf tos w)))
 
-(code find
-  (push (forth-lookup (car *pstack*)) *pstack*))
+(code "(find)"
+  (sp-! (forth-lookup tos)))
 
 (code quit
-  (throw 'done *pstack*))
+  (throw 'done sp))
 
 (code find-or-quit
-  (let ((name (car *pstack*)))
+  (let ((name tos))
     ;; (format t "~%     ~A" name)
     (if name
-        (push (forth-lookup name) *pstack*)
-      (throw 'done (cdr *pstack*))
+        (sp-! (forth-lookup name))
+      (throw 'done (cdr sp))
       )))
 
 (code must-find
-  (let ((name (car *pstack*)))
+  (let ((name tos))
     (if name
-        (setf (car *pstack*) (must-find name))
+        (setf tos (must-find name))
       (report-error " EOF error"))))
 
 (code interpret
-  (destructuring-bind (ans arg . rest) *pstack*
-    (setf *pstack* rest)
+  (let* ((ans  sp@+)
+         (arg  sp@+))
     (if ans
         (forth-handle-found ans)
       (forth-handle-not-found arg)) ))
@@ -106,24 +117,27 @@
 (colon bl-word
        bl word)
 
+(code outer-again
+  (ip! (icode-of *tic-outer*)))
+
 (colon outer
-       bl-word find-or-quit interpret )
+       bl-word find-or-quit interpret outer-again)
 (setf *tic-outer* (must-find 'outer))
 
 ;; -----------------------------------------------
 
 (code create-{
-  (push (derive-word '<colon-def>) *pstack*))
+  (sp-! (derive-word '<colon-def>)))
 
 (code create-code
-  (setf (car *pstack*)
+  (setf tos
         (derive-word '<code-def>
-                     :cfa (compile-lisp-text (car *pstack*))) ))
+                     :cfa (compile-lisp-text tos)) ))
 
 (code def
-  (destructuring-bind (name w . rest) *pstack*
-    (setf (fw-nfa w) name
-          *pstack*   rest)
+  (let* ((name sp@+)
+         (w    sp@+))
+    (setf (name-of w) name)
     (link w)
     ))
 
@@ -131,47 +145,51 @@
   (immediate))
 
 (code ","
-  (forth-compile-in (pop *pstack*)))
+  (forth-compile-in sp@+))
 
 (code compile
-  (forth-compile-in (pop *reg-i*)))
+  (forth-compile-in ip@+))
 
 (code swap
-  (setf *pstack* (roll 1 *pstack*)))
+  (let ((a tos)
+        (b nos))
+    (setf nos a
+          tos b)))
 
 (code drop
-  (pop *pstack*))
+  sp@+)
 
 (code @
-  (setf (car *pstack*) (aref (car *pstack*) 0)))
+  (setf tos (@fcell tos)))
 
 (code !
-  (destructuring-bind (loc val . rest) *pstack*
-    (setf (aref loc 0) val
-          *pstack*     rest)))
+  (let* ((loc sp@+)
+         (val sp@+))
+    (setf (@fcell loc) val)))
+
+(code =>
+  (to-oper ip@+ sp@+))
 
 ;; -------------------------------------------------------------
 ;; try supporting nested compiles...
 
 (code push-compile-context
-  (push (make-nested-frame) *display*))
+  (push (new-frame) *display*))
 
 (code import-icode
-  ;; (setf (fw-ifa %cur-def%) (funcall %cur-icode% :get))
-  (setf (fw-ifa %cur-def%) (arena-get %cur-icode%)))
+  (setf (icode-of %cur-def%) (arena-get %cur-icode%)))
 
 (code pop-compile-context
   (when (toplevel?)
-    (report-error " Compile context state error: ~A" (fw-nfa (last-def))))
+    (report-error " Compile context state error: ~A" (name-of (last-def))))
   (let ((curdef %cur-def%)) ;; cur-def is stored in the current frame
     (pop *display*)
-    ;; (inspect curdef)
     (if (toplevel?)
         (setf %cur-def% curdef) ;; copy down to previous state
       ;; else
       (progn
-        (set-compile t)
-        (forth-compile-in (pop *pstack*)))
+        (setf (compiling?) t)
+        (forth-compile-in sp@+))
       )))
 
 ;; -------------------------------------------------------------
@@ -198,15 +216,18 @@
        set-current-context ] )
 (immediate)
 
+(colon finalize-code
+        [  import-icode
+        pop-compile-context
+        set-current-context )
+
 (colon }
         ;; try this out... at the end of a definition
         ;; the context is reset to current. Vocabulary switching
         ;; inside the definition does not carry forward after the
         ;; end of the new definition.
-        compile exit [
-        import-icode
-        pop-compile-context
-        set-current-context )
+        compile exit
+        finalize-code )
 (immediate)
 
 ;; ---------------------------------------------------
@@ -219,18 +240,21 @@
 ;; ---------------------------------------------------------
 ;; ... the rest directly in Forth...
 ;; ---------------------------------------------------------
+;;  { #\newline word drop }  define-word ;; immediate  ;; we now have comments to end of line...
 
 (interpret #1>.end
  { bl-word def } 'define-word def
- { #\newline word drop }  define-word ;; immediate  ;; we now have comments to end of line...
+ { skip-to-eol }          define-word ;; immediate  ;; we now have comments to end of line...
  { #\) word drop }        define-word ( immediate   ( we now have embedded comments )
- { }                      define-word ) immediate   ( for confused Lisp reader )
+ { }                      define-word ) immediate   ( for confused Editor )
  { bl-word must-find }    define-word '                    ( -- verb )
  { ' , }                  define-word [compile] immediate  ( -- ) ;; valid only in compile mode
  { bl-word [compile] { }  define-word :                    ( -- name verb -> compile mode )
- { [compile] } swap def } define-word ; immediate          ( name verb -- ) ;; ends compile mode
+ { swap def }             define-word swdef       
+ { [compile] } swdef }    define-word ; immediate          ( name verb -- ) ;; ends compile mode
  
  : -- [compile] ;; ; immediate
+ : ;;; [compile] ;; ; immediate
  
  ;; at this point we can do colon defs ---------------------------------
  
@@ -239,193 +263,246 @@
          push-compile-context
          create-code
          pop-compile-context ; immediate
- : code bl-word [compile] code{ swap def ;
+ : code bl-word [compile] code{ swdef ;
 
  code ?immed ;; ( wd -- t/f )
-   (setf (car *pstack*) (is-immed (car *pstack*))) }
-   
+   (setf tos (is-immed tos)) }
+
  ;; now we can do code defs --------------------------------------------
  ;; so generate the inner workings for defining-words
  
- code (const)
-   (setf (car *pstack*)
-         (derive-word '<constant>
-                      :dfa (car *pstack*))) }
-
  code (;code)
-  (let ((behav (fw-cfa (pop *pstack*))))
-    (setf (car *pstack*)
+  (let ((behav (beh-of ip@)))
+    (setf tos
           (derive-word '<scode-def>
                        :cfa (lambda (self)
                               (doval self)
                               (funcall behav self))
-                       :dfa (car *pstack*))
-          *reg-i*  (pop *rstack*)
+                       :dfa tos)
+          ip  rp@+
           )) }
-  
- ) ;; Lparen for confused Lisp reader
- 
- : ;code{ compile literal
+
+ : ;code{ compile (;code)
           [compile] code{
-          compile (;code)
-          [compile] ;
-          ; immediate
-          
-  ) ;; another Lparen for confused Lisp reader
+          finalize-code swdef ; immediate
           
  code ;:
   ;; stack contains data
   ;; this performs EXIT and the follow i-code
   ;; will be the actions for the newly defined verb
-  (setf (car *pstack*)
+  (setf tos
         (derive-word '<scolon-def>
-                     :dfa (car *pstack*)
-                     :ifa *reg-i*)
-        *reg-i* (pop *rstack*)
+                     :dfa tos
+                     :ifa ip)
+        ip rp@+
         ) }
 
+;;;  : (const) ;code{ }
+
+ code (const)
+   (setf tos (derive-word '<constant>
+                          :dfa tos)) }
+  
  ;; handy access to the host environment... ---------------------------
+ ;;
+ ;; How is this different from inline code{ ?
+ ;;
+ ;;   CODE{   produces compiled Lisp code and places it on the stack.
+ ;;           You can turn around and EXECUTE that code. The code is always
+ ;;           called with one parameter - the <CODE> structure representing the
+ ;;           Forth code object, called SELF.
+ ;;
+ ;;   LISP{   performs an immediate call to compiled Lisp code an has no
+ ;;           ostensible effects on the stack (unless the code itself does).
+ ;;           The code is not called with any parameters.
  
  code lisp
-  (let ((e  (read-from-string (pop *pstack*))))
+  (let ((e  (read-from-string sp@+)))
     (funcall (compile nil `(lambda () ,e)))) }
 
  : lisp{ }-word lisp ;
 
  ;; various stack manipulation verbs -----------------------------------
- 
+
  code execute
-  (execute-word (pop *pstack*)) }
+  (execute-word sp@+) }
 
  code (jmp)
-     (do-jmp (pop *reg-i*)) }
+     (do-jmp ip@+) }
   
  code <r
-      (push (pop *pstack*) *rstack*) }
+      (rp-! sp@+) }
 
  code r>
-      (push (pop *rstack*) *pstack*) }
+      (sp-! rp@+) }
 
  code i
-      (push (car *rstack*) *pstack*) }
+      (sp-! rtos) }
 
  code j
-      (push (third *rstack*) *pstack*) }
+      (sp-! (third rp)) }
 
  code over
-  (destructuring-bind (a b . rest) *pstack*
-    (setf *pstack* (list* b a b rest))) }
+  (sp-! nos) }
 
  code swap-over
-  (destructuring-bind (a b . rest) *pstack*
-    (setf *pstack* (list* a b a rest))) }
+  (let ((a tos))
+    (setf tos nos
+          nos a)
+    (sp-! a)) }
 
+ code swap-drop
+   (let ((x  sp@+))
+     (setf tos x)) }
+   
  code dupnos
-  (destructuring-bind (a b . rest) *pstack*
-    (setf *pstack* (list* a b b rest))) }
+   (let ((a tos))
+     (setf tos nos)
+     (sp-! a)) }
 
- code dup   (push (car *pstack*) *pstack*) }
- code roll  (setf *pstack* (roll (pop *pstack*) *pstack*)) }
- code rot   (setf *pstack* (roll 2 *pstack*)) }
- code -rot  (setf *pstack* (roll -2 *pstack*)) }
+ code dup   (sp-! tos) }
+ code roll  (sp! (let ((ct sp@+))
+                   (roll ct sp))) }
+ code rot   (sp! (roll 2 sp)) }
+ code -rot  (sp! (roll -2 sp)) }
  
  code ndrop
-  (let ((n (car *pstack*)))
-    (setf *pstack* (nthcdr (1+ n) *pstack*))) }
+  (let ((n tos))
+    (sp! (nthcdr (1+ n) sp))) }
 
  code 2dup
-  (destructuring-bind (a b . rest) *pstack*
-    (setf *pstack* (list* a b a b rest))) }
+   (sp-! nos)
+   (sp-! nos) }
 
  code 2swap
-  (destructuring-bind (a b c d . rest) *pstack*
-    (setf *pstack* (list* c d a b rest))) }
+  (destructuring-bind (a b c d . rest) sp
+    (sp! (list* c d a b rest))) }
 
  code 2over
-  (destructuring-bind (a b c d . rest) *pstack*
-    (setf *pstack* (list* c d a b c d rest))) }
+  (destructuring-bind (a b c d . rest) sp
+    (sp! (list* c d a b c d rest))) }
 
  code 2rot
-  (destructuring-bind (a b c d e f . rest) *pstack*
-    (setf *pstack* (list* e f a b c d rest))) }
+  (destructuring-bind (a b c d e f . rest) sp
+    (sp! (list* e f a b c d rest))) }
 
  code -2rot
-  (destructuring-bind (a b c d e f . rest) *pstack*
-    (setf *pstack* (list* c d e f a b rest))) }
+  (destructuring-bind (a b c d e f . rest) sp
+    (sp! (list* c d e f a b rest))) }
 
  code 2swap-over
-  (destructuring-bind (a b c d . rest) *pstack*
-    (setf *pstack* (list* a b c d a b rest))) }
+  (destructuring-bind (a b c d . rest) sp
+    (sp! (list* a b c d a b rest))) }
 
  code 2drop
-  (setf *pstack* (cddr *pstack*)) }
+  (sp! (cddr sp)) }
 
  code depth
-  (push (length *pstack*) *pstack*) }
+  (sp-! (length sp)) }
 
  code pick
-  (let ((n (car *pstack*)))
-    (setf (car *pstack*) (nth (1+ n) *pstack*))) }
+  (let ((n tos))
+    (setf tos (nth (1+ n) sp))) }
 
  code ->lst
-  (let ((nel (pop *pstack*)))
+  (let ((nel sp@+))
     (multiple-value-bind (hd tl)
-        (um:split nel *pstack*)
-      (setf *pstack* (cons (nreverse hd) tl))
+        (um:split nel sp)
+      (sp! (cons (nreverse hd) tl))
       )) }
 
  code ->lst*
-  (let ((nel (pop *pstack*)))
+  (let ((nel sp@+))
     (multiple-value-bind (hd tl)
-        (um:split nel *pstack*)
-      (setf *pstack* (cons (append (nreverse (cdr hd)) (car hd)) tl))
+        (um:split nel sp)
+      (sp! (cons (append (nreverse (cdr hd)) (car hd)) tl))
       )) }
 
  code lst->
-   (let ((lst  (pop *pstack*)))
-     (setf *pstack* (cons (length lst) (nconc (reverse lst) *pstack*)) )) }
+   (let ((lst  sp@+))
+     (sp! (cons (length lst) (nconc (reverse lst) sp)) )) }
 
+ : pop   ( lst -- [cdr lst] [car lst] )
+    dup cdr
+    swap car ;
+
+ : push  ( lst x -- [cons x lst] )
+    swap cons ;
+    
  code ->vec
-  (let ((nel (pop *pstack*)))
+  (let ((nel sp@+))
     (multiple-value-bind (hd tl)
-        (um:split nel *pstack*)
-      (setf *pstack* (cons (make-array nel
-                                     :initial-contents (nreverse hd))
+        (um:split nel sp)
+      (sp! (cons (make-array nel
+                             :initial-contents (nreverse hd))
                          tl)))) }
 
  code vec->
-  (let* ((seq  (pop *pstack*))
+  (let* ((seq  sp@+)
          (lst  (coerce seq 'list)))
     ;; be careful here... this could also be applied to a list
     ;; in which case the (coerce seq 'list) would return the original argument
     ;; might not be safe to nreverse that original list
-    (setf *pstack* (cons (length seq) (nconc (reverse lst) *pstack*)))) }
+    (sp! (cons (length seq) (nconc (reverse lst) sp)))) }
 
  code copy-vec
-   (setf (car *pstack*) (copy-seq (car *pstack*))) }
+   (setf tos (copy-seq tos)) }
 
  code 1vec
-   (setf (car *pstack*) (vector (car *pstack*))) }
+   (setf tos (vector tos)) }
 
  code 2vec
-   (let* ((snd  (pop *pstack*))
-          (fst  (car *pstack*)))
-     (setf (car *pstack*) (vector fst snd))) }
+   (let* ((snd  sp@+)
+          (fst  tos))
+     (setf tos (vector fst snd))) }
 
  code string=
- ;; case insensitive
-  (let* ((s1 (pop *pstack*))
-         (s2 (car *pstack*)))
-    (setf (car *pstack*) (string-equal s1 s2))) }
+  ;; case insensitive
+  (let* ((s1 sp@+)
+         (s2 tos))
+    (setf tos (string-equal s1 s2))) }
 
  code /mod
-  (destructuring-bind (d n . rest) *pstack*
-    (setf *pstack* (nconc (nreverse (multiple-value-list (truncate n d)))
-                        rest))) }
+  (let ((d  tos)
+        (n  nos))
+    (multiple-value-bind (q r)
+        (truncate n d)
+      (setf nos q
+            tos r))) }
+
+ code */
+   (let* ((d  sp@+)
+          (n2 sp@+))
+     (setf tos (/ (* tos n2) d))) }
+
+ code */mod
+   (let* ((d sp@+))
+    (multiple-value-bind (q r)
+        (truncate (* tos nos) d)
+      (setf nos q
+            tos r))) }
+
+ code sw-
+   (let ((a  sp@+))
+     (setf tos (- a tos))) }
+
+ code sw/
+    (let ((a sp@+))
+      (setf tos (/ a tos))) }
+
+ code sw-mod
+    (let ((a sp@+))
+      (setf tos (mod a tos))) }
+
+ code sw!
+    (let* ((val  sp@+)
+           (loc  sp@+))
+      (setf (@fcell loc) val)) }
+ 
 
  code .
    (with-users-base
-    (princ (pop *pstack*))) }
+    (princ sp@+)) }
 
 
  ;; print- and read- base -------------------------------------------
@@ -480,7 +557,7 @@
      @ . ;
  : exch  ( v addr -- v' )
       dup @ -rot ! ;
- : sw!  swap ! ;
+ ;; : sw!  swap ! ;
  : ov!  over ! ;
  : swov swap over ;
  : ovsw over swap ;
@@ -496,26 +573,52 @@
  : --@ dup @ 1- dup rot ! ;
  : 0! 0 sw! ;
 
+ : s:abc  ;
+ : s:acb  swap ;
+ : s:bca  rot ;
+ : s:bac  rot swap ;
+ : s:cab  -rot ;
+ : s:cba  swap rot ;
+
+ : s:ab ;
+ : s:ba   swap ;
+
+ : s:abb  dup ;
+ : s:bba  dup rot ;
+ : s:bab  swap over ;
+ 
+ : s:aba  over ;
+ : s:aab  over swap ;
+ : s:baa  swap dup ;
+
+ : s:abab 2dup ;
+ : s:abba 2dup swap ;
+ : s:aabb 2dup rot ;
+ : s:baab swap 2dup swap ;
+ : s:baba swap 2dup ;
+ : s:bbaa swap 2dup rot ;
+ 
  ;; 1-D arrays -------------------------------------------------------
 
- code allot (setf (car *pstack*) (make-array (car *pstack*))) }
+ code allot (setf tos (make-array tos)) }
 
  : array        ( n -- )
      allot constant ;
 
  code fill     ;; ( v arr -- )
-   (destructuring-bind (arr v . rest) *pstack*
-       (setf *pstack* rest)
-       (fill arr v)) }
+   (let* ((arr sp@+)
+          (v   sp@+))
+     (fill arr v)) }
 
  code i@
-      (let ((ix (pop *pstack*)))
-        (setf (car *pstack*) (aref (car *pstack*) ix))) }
+      (let ((ix sp@+))
+        (setf tos (@fcell tos ix))) }
 
  code i!
-  (destructuring-bind (ix loc val . rest) *pstack*
-    (setf (aref loc ix) val
-          *pstack*      rest)) }
+  (let* ((ix  sp@+)
+         (loc sp@+)
+         (val sp@+))
+    (setf (@fcell loc ix) val)) }
 
  : fst   ( 2vec -- obj )
     @ ;
@@ -532,22 +635,24 @@
  code nth-pair ;;  ( pair n -- pair )
    ;; using 2vecs as pairs (car,cdr), do the pointer chasing to find
    ;; the nth pair.
-   (let* ((n     (pop *pstack*))
-          (pair  (car *pstack*)))
+   (let* ((n     sp@+)
+          (pair  tos))
      (when (plusp n)
        (loop repeat n do
-               (setf pair (aref pair 1)))
-       (setf (car *pstack*) pair))) }
+               (setf pair (@fcell pair 1)))
+       (setf tos pair))) }
    
  ;; vocabularies ------------------------------------------------
 
  code latest
-       (push (last-def) *pstack*) }
+       (sp-! (last-def)) }
 
+ code (vocabulary)
+       (sp-! (derive-word '<vocabulary>)) }
+                    
  : vocabulary   ( -- )
-     0 1vec dup { ;: context ! }
-     define-word immediate
-     latest sw! ;
+     (vocabulary)
+     define-word ;
 
  : definitions  ( -- )
      context @ current ! ;
@@ -570,17 +675,17 @@
 
  ;; printing and introspection -------------------------------------
 
- code inspect (inspect (pop *pstack*)) }
+ code inspect (inspect sp@+) }
  code cr      (terpri) }
  code space   (princ #\space) }
- code cls     (setf *pstack* nil) }
+ code cls     (sp! nil) }
  
- code (show) (decompile (pop *pstack*)) }
+ code (show) (decompile sp@+) }
  : show ' (show) ;
 
  code .s
     (with-users-base
-      (dolist (item (reverse *pstack*))
+      (dolist (item (reverse sp))
         (write item)
         (princ #\space))
       (princ "<-Top")) }
@@ -588,18 +693,21 @@
  ;; indefinite looping -----------------------------------------------
 
  code mark-skip
-   (push (pop *pstack*) *skip-words*) }
+   #+:LISPWORKS
+   (sys:atomic-push sp@+ *skip-words*)
+   #-:LISPWORKS
+   (push sp@+ *skip-words*) }
  
- ;; code here (push (funcall %cur-icode% :last-pos) *pstack*) }
- code here (push (arena-last-pos %cur-icode%) *pstack*) }
+ ;; code here (push (funcall %cur-icode% :last-pos) sp) }
+ code here (sp-! (arena-last-pos %cur-icode%)) }
 
  code backpatch
-  (destructuring-bind (location addr . rest) *pstack*
-    (setf *pstack* rest
-          (car location) addr)) }
+  (let* ((location  sp@+)
+         (addr      sp@+))
+    (setf (car location) addr)) }
 
  code (br)
-  (setf *reg-i* (car *reg-i*)) }
+  (ip! ip@) }
  ' (br) mark-skip
 
  ;; begin .. end
@@ -611,35 +719,42 @@
  ;; conditionals ------------------------------------------------------
 
  code (ift)
-  (let ((tclause (pop *reg-i*)))
-    (when (pop *pstack*)
-        (execute-word tclause))) }
+  (let ((tclause ip@+))
+    (when sp@+
+       (execute-word tclause))) }
 
  code (ifnt)
-  (let ((tclause (pop *reg-i*)))
-    (unless (pop *pstack*)
+  (let ((tclause ip@+))
+    (unless sp@+
         (execute-word tclause))) }
 
  code (ifte)
-  (destructuring-bind (tclause fclause . rest) *reg-i*
-    (setf *reg-i* rest)
-    (execute-word (if (pop *pstack*) tclause fclause)) ) }
+  (let* ((tclause  ip@+)
+         (fclause  ip@+))
+    (execute-word (if sp@+ tclause fclause)) ) }
 
  : ift       compile (ift) ; immediate
  : ifte      compile (ifte) ; immediate
  : ifnt      compile (ifnt) ; immediate
  
  code (if)
-  (if (pop *pstack*)
-      (setf *reg-i* (cdr *reg-i*))
-    (setf *reg-i* (car *reg-i*))) }
+  (if sp@+
+      ip@+
+    (ip! ip@)) }
  ' (if) mark-skip
 
  code (ifnot)
-  (if (pop *pstack*)
-      (setf *reg-i* (car *reg-i*))
-    (setf *reg-i* (cdr *reg-i*))) }
+  (if sp@+
+      (ip! ip@)
+    ip@+) }
  ' (ifnot) mark-skip
+
+ code (?dup-if)
+   (if tos
+       ip@+
+     (progn
+       sp@+
+       (ip! ip@))) }
 
  code nop }
 
@@ -652,154 +767,117 @@
  : ifnot     compile (ifnot) compile-nop here ; immediate
  : then      compile-cnop here swap backpatch ; immediate
  : else      compile (br) compile-nop here swap [compile] then ; immediate
-
+ : ?dup-if   compile (?dup-if) compile-nop here ; immediate
+ 
   ;; begin .. while .. repeat
   ;; begin .. until .. repeat
- : while     [compile] if swap ; immediate
- : until     compile (ifnot) compile-nop here swap ; immediate
- : repeat    [compile] end [compile] then ; immediate
+ : while      [compile] if swap ; immediate
+ : until      [compile] ifnot swap ; immediate
+ : repeat     [compile] end [compile] then ; immediate
+ : ?dup-while [compile] ?dup-if swap ; immediate
+ 
+ ;; do-loops ----------------------------------------------------
+
+ code (do)
+  (let* ((ix    sp@+)
+         (limit sp@+))
+    (if (= ix limit)
+        (ip! ip@)
+      (progn
+        (rp-! limit)
+        (rp-! ix)
+        ip@+))
+    ) }
+ ' (do) mark-skip
+
+ code (loop)
+  (let ((ix (1+ rp@)))
+    (if (< ix (cadr rp))
+        (progn
+          (setf rp@ ix)
+          (ip! ip@))
+      (progn
+        (rp! (cddr rp))
+        ip@+)
+      )) }
+ ' (loop) mark-skip
+
+ code (+loop)
+  (let* ((incr sp@+)
+         (ix   (+ incr rp@)))
+    (if (minusp incr)
+        (if (>= ix (cadr rp))
+            (progn
+              (setf rp@ ix)
+              (ip! ip@))
+          (progn
+            (rp! (cddr rp))
+            ip@+))
+
+      (if (< ix (cadr rp))
+          (progn
+            (setf rp@ ix)
+            (ip! ip@))
+        (progn
+          (rp! (cddr rp))
+          ip@+)))
+    ) }
+ ' (+loop) mark-skip
+
+ : do     compile (do) compile-nop here compile-cnop here ; immediate
+ : loop   compile (loop) , [compile] then ; immediate
+ : +loop  compile (+loop) , [compile] then ; immediate
+
+ ;; CASE Statement -----------------------------------------------------
+
+ : (case)
+     r>     ;; x a
+     begin
+       s:aab      ;; x x a
+       pop        ;; x x [cdr a] [car a]
+       dup        ;; x x [cdr a] [car a] [car a]
+    while
+       s:bac execute  ;; x [cdr a] t/f
+       if
+          swap-drop      ;; [cdr a]
+          pop  swap      ;; [car [cdr a]] [cdr [cdr a]]
+          begin
+            pop
+          while
+            pop drop
+          repeat
+          <r
+          execute
+          exit
+       else
+          pop drop
+       then
+     repeat
+     drop <r 2drop ;
+
+ "OpenCase" constant OpenCase
+ 
+ : case  OpenCASE compile (case) ; immediate
+ 
+ : esac  drop code{ (forth-compile-in nil) } ; immediate
+ 
+ : otherwise  drop t ;
 
  ;; code replacement --------------------------------------------------
 
  code patch
   ;; very un-Forth-like
-  (destructuring-bind (wd icode . rest) *pstack*
-    (setf (fw-ifa wd) (fw-ifa icode)
-          *pstack*    rest)) }
+  (let* ((wd    sp@+)
+         (icode sp@+))
+    (setf (icode-of wd) (icode-of icode))) }
 
- : ?dup dup if dup then ;
+ ;; : ?dup dup if dup then ;
+ code ?dup
+    (when tos
+      (sp-! tos)) }
 
  ;; now give us a proper outer interpreter
- { begin bl-word ?dup while find interpret repeat quit } ' outer patch
-
- ;; properties -----------------------------------------------------
- ;; Now that we are Self-like object based, let's add properties to any Forth word...
-
- : #| ; immediate
- : |# ; immediate  ;; for confused Lisp reader
-
- 
- { begin bl-word
-     dup "#|" string=
-        if drop [compile] #| [ over ] again then
-     dup ";;" string=
-        if drop [compile] ;; [ over ] again then
-     dup "(" string=
-        if drop [compile] (  [ over ] again then -- ) for confused Lisp reader
-     dup "--" string=
-        if drop [compile] -- [ over ] again then
-     "|#" string= if exit then
-    again }
- ' #| patch
-
-  |# ;; " for confused Lisp reader
-    
- #|
- code prop@  ;; ( word key -- val )
-   (let ((key  (pop *pstack*)))
-     (setf (car *pstack*) (ro:prop (car *pstack*) key))) }
-
- code prop!  ;; ( val word key -- )
-   (destructuring-bind (key word val . rest) *pstack*
-     (setf *pstack* rest
-           (ro:prop word key) val)) }
-
-   ( e.g., 15 ' BL ':x15 prop!  -- sets property with key :X15 on word BL to 15 )
- |#
-      
- ;; local vars -------------------------------------------------
-
-: collect-words ( delim-str -- words nbr )
-     <r 0
-     begin
-       bl-word dup i string=
-     not while
-       swap 1+
-     repeat drop r> drop ;
-
- : collect-locals ( -- ... lcl lcl lcl n )
-       "{" collect-words ;
-
- : (call-with-frame)  i car ->vec
-                      code{ (push (pop *pstack*) *frstack*) }
-                      i cadr execute
-                      code{ (pop *frstack*) }
-                      r> cddr <r ;
-
- code create-local-frame
-    (setf (frame-locals (car *display*)) (pop *pstack*)) }
-         
- : ->    collect-locals 
-         compile (call-with-frame) dup ,
-         ->vec [compile] { swap create-local-frame ; immediate
-
-  ( to be used as:
-       { -> a b c { a b + . c a / } }
-
-    Within the inner block, the named locals act like constants.
-    The stack is trimmed by the number of locals appearing after the ->
-    The rightmost local corresponds to the current TOS. )
-
-  code toplevel?
-    (push (toplevel?) *pstack*) }
-    
-  : ?execute ( fn -- fn or closure )
-    -- used by some compiling words that construct functions
-    -- sometimes we need them to execute at toplevel
-    toplevel? if execute then ;
-
-
- ;; do-loops ----------------------------------------------------
-
- code (do)
-  (destructuring-bind (ix limit . rest) *pstack*
-    (setf *pstack* rest)
-    (if (= ix limit)
-        (setf *reg-i* (car *reg-i*))
-      (progn
-        (push limit *rstack*)
-        (push ix    *rstack*)
-        (setf *reg-i* (cdr *reg-i*))))
-    ) }
- ' (do) mark-skip
-
- code (loop)
-  (let ((ix (1+ (car *rstack*))))
-    (if (< ix (cadr *rstack*))
-        (progn
-          (setf (car *rstack*) ix)
-          (setf *reg-i* (car *reg-i*)))
-      (progn
-        (setf *rstack* (cddr *rstack*))
-        (setf *reg-i* (cdr *reg-i*)))
-      )) }
- ' (loop) mark-skip
-
- code (+loop)
-  (let* ((incr (pop *pstack*))
-         (ix   (+ incr (car *rstack*))))
-    (if (minusp incr)
-        (if (>= ix (cadr *rstack*))
-            (progn
-              (setf (car *rstack*) ix)
-              (setf *reg-i* (car *reg-i*)))
-          (progn
-            (setf *rstack* (cddr *rstack*))
-            (setf *reg-i* (cdr *reg-i*))))
-
-      (if (< ix (cadr *rstack*))
-          (progn
-            (setf (car *rstack*) ix)
-            (setf *reg-i* (car *reg-i*)))
-        (progn
-          (setf *rstack* (cddr *rstack*))
-          (setf *reg-i* (cdr *reg-i*)))))
-    ) }
- ' (+loop) mark-skip
-
- : do        compile (do) compile-nop here compile-cnop here ; immediate
- : loop      compile (loop) , [compile] then ; immediate
- : +loop     compile (+loop) , [compile] then ; immediate
+ { begin bl-word ?dup-while (find) interpret repeat quit } ' outer patch
 
   ;; --------------------------------------------------------------
 
@@ -807,136 +885,513 @@
 
  code patch-behavior
    ;; ... just because we can...
-   (destructuring-bind (wd ccode . rest) *pstack*
-     (setf (fw-cfa wd) (fw-cfa ccode)
-           *pstack*      rest)) }
+   (let* ((wd    sp@+)
+          (ccode sp@+))
+     (setf (beh-of wd) (beh-of ccode))) }
 
  : "  #\" word
-     compiling @ if compile literal , then ; immediate -- " for confused Lisp reader 
+     compiling @ if compile literal , then ; immediate -- " for confused Editor
 
  : ?compile compiling @ if r> dup car , cdr <r then ;
 
  : ."     [compile] " ?compile . ; immediate
 
- code error (report-error (pop *pstack*)) }
+ code error (report-error sp@+) }
  : error" [compile] " ?compile error ; immediate
 
- : .base   base @ dup #10r16 = if drop ." Hex"
-             else dup #10r10 = if drop ." Decimal"
-             else dup #10r8  = if drop ." Octal"
-             else dup #10r2  = if drop ." Binary"
-             else dup decimal . base !
-           then then then then ;
+ : .base
+       base @
+       case { #10r16 =  } { ." Hex"     }
+            { #10r10 =  } { ." Decimal" }
+            { #10r8  =  } { ." Octal"   }
+            { #10r2  =  } { ." Binary"  }
+            { otherwise } { base @ decimal dup . base ! }
+       esac ;
 
  : verify-stack-empty
-     depth 0/= if cr .s error" Something is dirty..." then ;
-
- code @nfa
-    (setf (car *pstack*) (fw-nfa (car *pstack*))) }
-   
- code @lfa
-      (setf (car *pstack*) (fw-lfa (car *pstack*))) }
-
- code @dfa ;; as in: ' wwww dfa
-    (setf (car *pstack*) (fw-dfa (car *pstack*))) }
-
- code @cfa
-    (setf (car *pstack*) (fw-cfa (car *pstack*))) }
-   
- code @ifa
-    (setf (car *pstack*) (fw-ifa (car *pstack*))) }
-   
- code !lfa
-      (destructuring-bind (w new-prev . rest) *pstack*
-        (setf *pstack*   rest
-              (fw-lfa w) new-prev)) }
-
- code !ifa ;; ( val w -- )
-      (destructuring-bind (w val . rest) *pstack*
-        (setf *pstack*   rest
-              (fw-ifa w) val)) }
-
- code !dfa ;; ( val w -- )
-      (destructuring-bind (w val . rest) *pstack*
-        (setf *pstack*   rest
-              (fw-dfa w) val)) }
-
- ;; closures -------------------------------------------------------------
-#|
- code create-closure
-    (push (derive-word '<closure-def>) *pstack*) }
-
- code exit-closure
-    (setf *reg-i*   (pop *rstack*)
-          *frstack* (pop *rstack*)) }
-     
- code @env
-    (push *frstack* *pstack*) }
-
- : form-closure ( fn -- closure )
-     @env over !dfa ;
-       
- : '{
-    push-compile-context        ;; make new static frame
-    create-{                    ;; make new anon clondef as curdef, leave on stack
-    set-current-context ]
-    compile literal             ;; compiles into curdef
-    push-compile-context        ;; make new static frame
-    create-closure ; immediate  ;; make new anon closure curdef, leave on stack
-
- : }'
-    compile exit-closure        ;; end the closure code
-    import-icode                ;; reify the closure obj code
-    pop-compile-context         ;; restore prior static frame
-    compile form-closure        ;; compiles into containing anon colondef
-    compile exit [compile] [
-    import-icode                ;; reify colondef obj code
-    pop-compile-context         ;; restore prior static frame
-    set-current-context ; immediate
-|#
-      
- : jmp
-    ?compile (jmp) ; immediate
+     depth 0/= if cr .s error"   Something is dirty..." then ;
 
  : ['] ' compiling @ if compile literal , then ; immediate
+ : [,] compiling @ if compile literal then , ; immediate
 
+
+;; --------------------------------------------
+;; Proper Comments & Conditional Compilation
+
+ : #| ; immediate  ;; |# for confused Editor
+ : skip-to-fi ;
+ : skip-quote  #\" word drop ;
+ : skipper     
+     case { "#|"      string= } { [compile] #|  }  ;; |# |#
+          { ";;"      string= } { [compile] ;;  }
+          { ";;;"     string= } { [compile] ;;; }
+          { "--"      string= } { [compile] --  }
+          { "("       string= } { [compile] (   }
+          { "#+IF"    string= } { skip-to-fi    }
+          { "#-IF"    string= } { skip-to-fi    }
+          { "\""      string= } { skip-quote    }
+          { ".\""     string= } { skip-quote    }
+          { "error\"" string= } { skip-quote    }
+      esac ;
+
+
+ { begin bl-word dup
+     case { "|#" string= } { drop r> r> 2drop }  ;; " dummy for Editor
+          { otherwise    } { dup skipper      }
+      esac
+      drop
+   again }
+' #| patch         ;; |#
+
+
+ { begin bl-word dup
+     case { "FI#" string= } { drop r> r> 2drop }
+          { otherwise     } { dup skipper      }
+     esac
+     drop
+   again }
+' skip-to-fi patch
+
+
+ code feature?
+     (setf tos (member tos *features*)) }
+     
+ : #-IF   if skip-to-fi then ; immediate
+ : #+IF   not [compile] #-IF ; immediate
+ : FI# ; immediate
  
- -- Easy construction of Vectors ---
+ nil #+IF diddly dodah! FI#
+ 
+ 
+;; local vars -------------------------------------------------
+
+: collect-words ( delim-str -- words nbr )
+     <r 0
+     begin
+       bl-word dup i string=
+     until
+       swap 1+
+     repeat
+     drop r> drop ;
+
+ code <env
+    (fp-! sp@+) }
+
+ code env>
+    fp@+ }
+
+ code ip)+  (sp-! (pop rp@)) }
+
+ : (call-with-frame)
+      ip)+ ->vec
+      <env ip)+ execute env> ;
+
+ code create-locals-frame
+    (setf (frame-locals (car *display*)) sp@+) }
+         
+ : ->    "{" collect-words
+         compile (call-with-frame) dup ,
+         ->vec [compile] { swap create-locals-frame
+         ; immediate
+
+;; --------------------------------------------
+;; possibly cleaner way to do things...
+
+code :->;:  ;; ( pend-: nlocals -- pend-;: )
+   (let ((nel  sp@+))
+     (change-class tos '<scolon-def>
+                   :cfa       'doscol
+                   :dfa       nel
+                   :verb-type ";:"
+                   )) }
+
+ code >r<  ;; resume caller and set up to resume ourself on his exit
+   (rotatef rtos ip) }
+   
+ : (exec-with-frame)   ( lcl1 lcl2 ... nlocals -- )
+     ->vec <env >r< env> ;
+     
+ : ->|    "|" collect-words ;; " for dumb Editor
+          dup <r ->vec create-locals-frame r> :->;:
+          compile (exec-with-frame) ; immediate
+
+;; --------------------------------------------
+  ( -> to be used as:
+
+       { -> a b c { a b + . c a / } }
+
+    Within the inner block, the named locals act like constants.
+    The stack is trimmed by the number of locals appearing after the ->.
+    The rightmost local corresponds to the current TOS. )
+
+;; --------------------------------------------
+;; Parameterized Functional Closures
+
+ code @env
+     (sp-! *frstack*) }
+
+ code !env
+     (fp! sp@+) }
+    
+ : make-closure ( fn env -- clos )
+       2vec ;: @env <r
+               dup snd !env
+               fst execute
+               r> !env ;
+
+ : (closure)
+    ip)+ @env ?dup-if make-closure then ;
+
+  code toplevel?
+    (sp-! (toplevel?)) }
+    
+ : '{  
+    toplevel? ifnot compile (closure) then [compile] { ; immediate
+
+ : }}  [compile] }  [compile] } ; immediate
+ : }}} [compile] }} [compile] } ; immediate
+ 
+;; --------------------------------------------
+;; Example of a closure in action:
+
+  { -> ct { '{ ct dup 1+ => ct }}} constant ctr-maker
+  0 ctr-maker execute constant my-ctr
+  : next-ct  my-ctr execute ;
+
+  { ->| ct |
+     '{ ct dup 1+ => ct }} constant new-ctr-maker
+  0 new-ctr-maker execute constant new-ctr
+  : next-new-ct  new-ctr execute ;
+  
+;; --------------------------------------------
+   ( To construct a parameterized closure, you must first enclose 
+     the '{ ... } within outer braces, e.g., 
+
+            { -> a { '{ a + } } }
+
+     The arrow -> looks for an opening { to terminate the list of local vars.
+     The inner closured gets pushed on the stack and can be executed.
+
+     Otherwise, a non-parameterized function literal, at either top level
+     of within a colon def:
+         : doit ... '{ ... } ... ; )
+   
+;; ----------------------------
+
+  : ?execute ( fn -- fn or closure )
+    -- used by some compiling words that construct functions
+    -- sometimes we need them to execute at toplevel
+    toplevel? if execute then ;
+
+
+;; --------------------------------------------
+
+ code @nfa
+    (setf tos (name-of tos)) }
+   
+ code @lfa
+    (setf tos (prev-of tos)) }
+
+ code @dfa ;; as in: ' wwww @dfa
+    (setf tos (data-of tos)) }
+
+ code @cfa
+    (setf tos (beh-of tos)) }
+   
+ code @ifa
+    (setf tos (icode-of tos)) }
+
+: name-of  @nfa ;
+: prev-of  @lfa ;
+: data-of  @dfa ;
+: beh-of   @cfa ;
+: icode-of @ifa ;
+
+    
+ code !nfa
+      (let* ((w        sp@+)    ;; LET* because we need sequential oper
+             (new-name sp@+))
+        (setf (name-of w) new-name)) }
+      
+ code !lfa
+      (let* ((w        sp@+)
+             (new-prev sp@+))
+        (setf (prev-of w) new-prev)) }
+
+ code !cfa
+       (let* ((w        sp@+)
+              (new-code sp@+))
+         (setf (beh-of w) new-code)) }
+       
+
+ code !ifa ;; ( val w -- )
+      (let* ((w   sp@+)
+             (val sp@+))
+        (setf (icode-of w) val)) }
+
+ code !dfa ;; ( val w -- )
+      (let* ((w   sp@+)
+             (val sp@+))
+        (setf (data-of w) val)) }
+
+: !name-of !nfa ;
+: !prev-of !lfa ;
+: !data-of !dfa ;
+: !beh-of  !cfa ;
+: !icode-of !ifa ;
+
+;; --------------------------------------------
+;; Easy construction of Vectors
+;;
+;; For #(a b c) enter: << a b c >>
+;; Same as:  a b c 3 ->vec
  
  : <<  '<< ;
 
  code >>
-   (let ((pos (position '<< *pstack*)))
+   (let ((pos (position '<< sp)))
      (unless pos
        (report-error " Missing '<< stack mark"))
      (multiple-value-bind (hd tl)
-         (um:split pos *pstack*)
+         (um:split pos sp)
        (let ((vec  (coerce (nreverse hd) 'vector)))
-         (setf  *pstack*       tl
-                (car *pstack*) vec))
+         (setf  sp  tl
+                tos vec))
        )) }
    
+;; --------------------------------------------
+;; Dictionary Management
+#|
+                                                                     
+                                                            
+                              ┌─ Vocabulary ─────────────────┐
+                              │ ┌────────────┐┌────────────┐ │
+                              │ │   Latest   ││   Parent   │ │
+                              │ └────────────┘└────────────┘ │
+                              └───────────────▲──────────────┘
+                                              │               
+                                              │               
+                       ┌─ Vocabulary ─────────┼───────┐       
+  ┌────────────┐       │ ┌────────────┐┌──────┴─────┐ │       
+  │  Current   ├───┬───▶ │   Latest   ││   Parent   │ │       
+  └────────────┘   │   │ └─────┬──────┘└────────────┘ │       
+                   │   └───────┼──────────────────────┘       
+  ┌────────────┐   │           │                              
+  │  Context   ├───┘           │     Dictionary Words         
+  └────────────┘               │      ┌────────────┐          
+                               └──────▶    Def     │          
+                                      └──────┬─────┘          
+                                             │ LFA            
+                                             │                
+                                      ┌──────▼─────┐          
+                                      │    ...     │          
+                                      └──────┬─────┘          
+                                             │ LFA            
+                                             │                
+                                             ▼
 
- ;; dictionary ----------------------------------------------------------
- 
- code gild
-       (setf *gild* (cons (@fcell *current*) (last-def))) }
- 
- code empty
-       (destructuring-bind (voc . last) *gild*
-         (!fcell *current* voc)
-         (!fcell *context* voc)
-         (!fcell voc last)) }
+CONTEXT is used for dict searches.
+CURRENT is the voc being extended with new defs.
+
+A VOCABULARY is a Forth word, just like any others, but its behavior
+sets CONTEXT to itself when executed.
+
+VOCABULARY is a defining word, which produces an immediate
+context-switching word, so that CONTEXT for searches can be switched
+while compiling.
+
+Vocabularies are linked together along the LFA chain with all other
+words in their parent dictionary. They also form a secondary chain
+through their parent vocabularies. (Parent = CURRENT, at the time of
+their definition.)
+
+VOCABULARY words reside in their parent's vocabulary branch of the
+dictionary, and can start a new branch of their own when you execute
+DEFINITIONS.  DEFINITIONS sets CURRENT to the value of CONTEXT. So a
+VOCABULARY word is visible in two branches - its own and its parent's.
+
+Example showing a chain of 3 vocabularies:
+------------------------------------------
+
+                    ┌──────────────┐                                              
+                    │              │                                              
+                    │              │                                              
+                    ▼              │                                              
+              Forth Words          │                                              
+             ┌────────────┐        │                                              
+             │    Def     │        │                                              
+             └──────┬─────┘        │                                              
+                    │ LFA          │                                              
+                    │              │                                              
+             ┌──────▼─────┐        │                                              
+             │    ...     │        │                                              
+             └──────┬─────┘        │                                              
+                    │ LFA          │                                              
+                    │              │                                              
+                    ▼              │                                              
+                   ...             │                                              
+                                   │                                              
+                    │   ┌──────────┼─────────────────────────────────────────────┐
+                    │   │          │                                             │
+                    │   │          │                                             │
+       Parent┌──────▼───▼──┐ Latest│                                             │
+ ┌───────────┤ Voc Camera  ├───────┼──────────────────────────────────┐          │
+ │           └──────┬──────┘       │                                  │          │
+ │                  │ LFA          │                                  │          │
+ │                  │              │                                  ▼          │
+ │                  ▼              │                            Camera Words     │
+ │                 ...             │                           ┌────────────┐    │
+ │                                 │                           │    Def     │    │
+ │                  │  ┌───────────┼────────────────────────┐  └──────┬─────┘    │
+ │                  │  │           │                        │         │ LFA      │
+ │                  │  │           │                        │         │          │
+ │     Parent┌──────▼──▼───┐ Latest│                        │  ┌──────▼─────┐    │
+ │  ┌────────┤Voc Assembler├───────┼─────────────┐          │  │    ...     │    │
+ │  │        └──────┬──────┘       │             │          │  └──────┬─────┘    │
+ │  │               │ LFA          │             │          │         │ LFA      │
+ │  │               │              │             ▼          │         │          │
+ │  │               ▼              │      Assembler Words   │         ▼          │
+ │  │              ...             │      ┌────────────┐    │        ...         │
+ │  │                              │      │    Def     │    │                    │
+ │  │               │              │      └──────┬─────┘    │         │          │
+ │  │               │              │             │ LFA      │         │          │
+ │  │               │              │             │          │         │          │
+ │  │        ┌──────▼─────┐        │      ┌──────▼─────┐    │  ┌──────▼─────┐    │
+ │  │        │    ...     │        │      │    ...     │    │  │    ...     │    │
+ │  │        └──────┬─────┘        │      └──────┬─────┘    │  └──────┬─────┘    │
+ │  │               │ LFA          │             │ LFA      │         │ LFA      │
+ │  │               │              │             │          │         │          │
+ │  │               ▼              │             ▼          │         └──────────┘
+ │  │              ...             │            ...         │                     
+ │  │                              │                        │                     
+ │  │               │              │             │          │                     
+ │  │               │              │             │          │                     
+ │  │               │              │             │          │                     
+ │  │        ┌──────▼──────┐ Latest│      ┌──────▼─────┐    │                     
+ │  └────────▶             ├───────┘      │    ...     │    │                     
+ └───────────▶  Voc Forth  │              └──────┬─────┘    │                     
+        ┌────┤             │                     │ LFA      │                     
+  Parent│    └──────┬──────┘                     │          │                     
+      ━━▼━━         │ LFA                        └──────────┘                     
+                  ━━▼━━
+
+In this example vocabularies ASSEMBLER and CAMERA both link to parent
+FORTH. They can see their own definitions, and those of parent FORTH
+that existed at the time of their creation. CURRENT was pointing at
+FORTH when they were defined.
+
+When in a vocabulary branch, you cannot see the definitions belonging
+to any other branch vocabularies, nor to any definitions of your
+parent's vocabulary that were defined later.
+
+Since CAMERA was defined later than ASSEMBLER, CAMERA and its own
+definitions can see ASSEMBLER directly, but not ASSEMBLER's
+definitions.  ASSEMBLER and its definitions can see neither CAMERA nor
+its definitions.
+
+However, both can ask to see the other and their definitiions by using
+FORTH ASSEMBLER and FORTH CAMERA, since both vocabularies are visible
+to FORTH. Since both have FORTH as a parent, they can both switch
+directly to FORTH, then FORTH can switch to either of them.
+
+Similarly, FORTH cannot see the definitions in ASSEMBLER or CAMERA
+without first executing ASSEMBLER or CAMERA.
+
+Executing a VOCABULARY word sets the CONTEXT to its own branch of the
+dictionary, viewing all that have been defined for the VOCABULARY,
+even as later defintions extend the vocabulary. A vocabulary word
+always points to its latest dictionary entry.
+
+Executing DEFINITIONS after switching context with a VOCABULARY word,
+sets the system to extend that particular branch of the dictionary as
+you compile new definitions.
+
+Vocabulary FORTH is at the base of the dictionary tree. It has no
+parent vocabulary, and no LFA predecessor in the dictionary tree.
+|#
+
+;; --------------------------------------------
+;; Some useful dictionary probing words
+
+ : exists?
+     ;; return true if word on stack exists in the dictionary
+     bl-word (find) swap-drop ;
+
+ code string-contains
+   (let ((str  (string sp@+)))
+     (setf tos (search tos str :test #'char-equal))) }
+
+ : last-def  ( voc -- wrd )
+     data-of @ ;
+     
+ : current-last   ( -- wrd )
+     current @ last-def ;
+     
+ : context-last   ( -- wrd )
+     context @ last-def ;
+     
+ code (apropos)
+    ;; returns a list of words sorted in increasing length
+    (setf tos (forth-apropos tos)) }
+
+ : apropos
+     ;; print of list of approximate matches to a word
+     bl-word (apropos)
+     begin
+     ?dup-while
+       pop . space
+     repeat ;
+
+ code (catalog)
+    (sp-! (catalog)) }
+
+ : catalog 
+     (catalog)
+     begin
+     ?dup-while
+	pop . cr
+     repeat ;
+
+;; --------------------------------------------
+;; Dictionary State
+#|
+   Dict State is a copy of CURRENT and a pointer
+   to the latest def in that vocabulary at the time of the state
+   snapshot.
+   
+   ┌─ Dict State ────────────────┐
+   │ ┌───────────┐ ┌───────────┐ │
+   │ │   Vocab   │ │   Last    │ │
+   │ └───────────┘ └───────────┘ │
+   └─────────────────────────────┘                                                             
+|#
 
  : dict-state  ( -- vec )
-     current @ latest 2vec ;
+     current @ dup data-of @ 2vec ;
 
  : restore-dict ( vec -- )
-     dup 1 i@   ;; the last word
-     swap @     ;; the voc ptr
+     dup snd    ;; the last word
+     swap fst   ;; the voc ptr
      dup context !
      dup current !
-     ! ; 
+     data-of ! ; 
+
+ ;; --------------------------------------------
+ ;; REMEMBER & MARKER
+ ;;
+ ;; MARKER creates a word that forgets down through itself when
+ ;; executed. Avoids GILD checking, and so should be used for defs
+ ;; beyond the GILD point.
+ ;;
+ ;; REMEMBER creates a MARKER that retains itself on execution.
+ 
+ #|
+  ┌─ Marker ────────────────────┐
+  │ ┌───────────┐ ┌───────────┐ │
+  │ │   Vocab   │ │   Last    │ │
+  │ └───────────┘ └───────────┘ │
+  └─────────────────────────────┘
+ |#
 
  : marker
      { dict-state ;: restore-dict }
@@ -944,33 +1399,207 @@
 
  : remember
      marker
-     dict-state latest !dfa ;
- 
- code (forget)
-     (destructuring-bind (w name . rest) *pstack*
-       (setf *pstack* rest)
-       (let ((wf (forth-lookup-from-word name (cdr *gild*))))
-         (if (and wf
-                  (eql w wf))
-             (print " Protected def")
-           ;; else
-           (let ((prev (fw-lfa w))
-                 (voc  (@fcell *current*)))
-             (!fcell voc prev)))
-         )) }
+     dict-state latest !data-of ; ;; patch to include ourself
 
- : forget bl-word find
-     ?dup ifte
-          { #| forth definitions |# (forget) }
-          { ." Not found: " . cr } ;
+ ;; --------------------------------------------
+ ;; GILD & EMPTY -- GILD should only ever be applied to the FORTH
+ ;; vocabulary. That way any vocabularies defined below the gild point
+ ;; are also protected against FORGET.
+     
+ nil variable gilded-state
+
+ : gild
+      ['] FORTH data-of @ gilded-state ! ;
+
+ : empty
+      gilded-state @
+      ?dup-if ['] FORTH data-of ! then ;
+
+ : ungild
+      nil gilded-state ! ;
+
+ ;; --------------------------------------------
+ ;; FORGET - a bit more complicated...
+ 
+ : parent-voc-of  ( voc -- voc' )
+    data-of snd ;
+
+ : ancestor?   ( w1 w2 -- t/f )
+    ;; return true if w1 is w2, or found in chain starting at w2
+    begin
+      2dup eq if drop exit then
+      dup
+    while
+      prev-of
+    repeat
+    swap-drop ;
+    
+ : beneath?   ( w1 w2 -- t/f )
+    ;; return true if w2 beneath w1
+    swap prev-of ancestor? ;
+    
+ : find-current-voc  ( w -- voc )
+    current @
+    begin
+      2dup beneath? if swap-drop exit then
+      parent-voc-of
+    again ;
+
+ : is-forth?  ( w -- t/f )
+     ['] FORTH eq ;
+
+ : attachment  ( w -- w' )
+     ;; If W resides in the main Forth vocabulary trunk then it is its
+     ;; own attachment point.
+     ;;
+     ;; Otherwise, find the ancestor vocabulary that resides in the
+     ;; main Forth trunk as the attachment point.
+     ;;
+     ;; An ancestor vocabulary residing in the main trunk will have a
+     ;; parent vocabulary that is FORTH.
+     ;;
+     dup find-current-voc dup is-forth? if drop exit then
+     swap-drop
+     begin
+        dup parent-voc-of is-forth? if exit then
+        parent-voc-of
+     again ;
+     
+ : protected? ( w -- t/f )
+     ;; W is protected if it lives in the main Forth trunk and it is
+     ;; at or beneath the GILD point, or else W's ancestor vocabulary
+     ;; that resides in the main Forth trunk is at or beneath the GILD
+     ;; point.
+     attachment gilded-state @ ancestor? ;
+     
+ : (forget)   ( w -- )
+     dup protected? if drop error" Protected def" then
+     dup prev-of swap find-current-voc
+     dup current ! dup context !
+     data-of ! ;
+     
+ : forget
+     set-current-context
+     bl-word (find)
+     dup ifte
+          { swap-drop (forget) }
+          { drop ." Not found: " . cr } ;
+
+;; --------------------------------------------
+;; PAD and numeric output formatting
+
+code pad
+   (sp-! *pad*) }
+          
+code !fill-ptr
+     (let* ((arr   sp@+)
+            (val   sp@+))
+       (setf (fill-pointer arr) val)) }
+
+code (c,)
+   (let* ((arr  sp@+)
+          (val  sp@+))
+     (vector-push-extend val arr)) }
+   
+code ch->code
+   (setf tos (char-code tos)) }
+
+code code->ch
+   (setf tos (code-char tos)) }
+
+: <pad  0 pad !fill-ptr ;
+: c,    pad (c,) ;
+: pad>  pad ;
+code <<pad
+   (ps-! (fill-pointer *pad*)) }
+code pad>>
+   (sp-! (subseq *pad* ps@))
+   (setf (fill-pointer *pad*) ps@+) }
+    
+: <#  <pad ;
+: #>  pad> reverse ;
+: <<# <<pad ;
+: #>> pad>> reverse ;
+: ->dig
+    dup 9. >
+    if [ #\A ch->code 10. - ] [,]
+    else [ #\0 ch->code ] [,]
+    then + code->ch ;
+: #   base @ /mod ->dig c, ;
+: #.  # #\. c, ;    
+: #:  base @ swap 6 base ! # swap base ! #\: c, ;
+: ##: # #: ;
+: #s  begin
+        #
+        dup 0=
+      until
+      repeat drop ;
+: n#  0 do # loop ;
+: #sign  0< if #\- c, then ;
+: #sign+ 0< if #\- else #\+ then c, ;
+
+: ndp  ( val n -- )
+    2dup base @ swap expt swap abs * round
+    <<# swap n# #\. c, #s #sign #>> ;
+: 2dp  2 ndp ;
+    
+: in-decimal
+    ip)+ base @ <r decimal execute r> base ! ;
+: unipolar  1.0 mod ;
+: bipolar   0.5 + unipolar 0.5 - ;
+    
+: dms  ( turns -- )
+    in-decimal
+    { bipolar dup abs 1296000. * round
+      <<# ##: ##: #s #sign+ #>> } ;
+      
+: hms  ( turns -- )
+    in-decimal
+    { unipolar 864000. * round 
+      <<# #. ##: ##: # # #>> } ;
+    
+;; --------------------------------------------
+
+':LISPWORKS feature? #+IF
+
+code cwd
+   (sp-! (hcl:get-working-directory)) }
+
+: pwd  cwd . ;
+
+code cd
+   (let ((path sp@+))
+     (if path
+         (eval `(hcl:cd ,path))
+       (hcl:cd))) }
+
+code ls
+  (sys:call-system-showing-output "ls -lF") }
+   
+code load 
+      (interpret (hcl:file-string sp@+)) }
+FI#
+
+;; --------------------------------------------
+
+code trace+
+   (trace+) }
+
+code trace-
+   (trace-) }
 
 remember overlay
 gild
 
  ;; parting wishes... -----------------------------------------------
+ 
  .s ;; should report "<- Top" if we are clean
- verify-stack-empty
-
+ 10 spaces ." !! Should just show:<-Top !!"
+verify-stack-empty
+ 
 ;; ------------------------------------------------------------
 
 .end)
+
+
+
