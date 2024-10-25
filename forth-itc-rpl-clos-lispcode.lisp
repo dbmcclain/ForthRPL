@@ -237,16 +237,16 @@
 
 ;; --------------------------------------------
 
-(define-symbol-macro tos   (car  *pstack*))
-(define-symbol-macro nos   (cadr *pstack*))
-(define-symbol-macro rtos  (car  *rstack*))
-(define-symbol-macro rnos  (cadr *rstack*))
-
 (define-symbol-macro sp    *pstack*)
 (define-symbol-macro rp    *rstack*)
 (define-symbol-macro ip    *reg-i*)
 (define-symbol-macro fp    *frstack*)
 (define-symbol-macro up    *unwind-chain*)
+
+(define-symbol-macro tos   (car  sp))
+(define-symbol-macro nos   (cadr sp))
+(define-symbol-macro rtos  (car  rp))
+(define-symbol-macro rnos  (cadr rp))
 
 ;; Ideally, these would be written like SP). But Lisp won't allow this.
 (define-symbol-macro sp@   (car sp))
@@ -284,16 +284,16 @@
 
 
 (defmacro !sp (val)
-  `(setf *pstack* ,val))
+  `(setf sp ,val))
 
 (defmacro !rp (val)
-  `(setf *rstack* ,val))
+  `(setf rp ,val))
 
 (defmacro !ip (val)
-  `(setf *reg-i* ,val))
+  `(setf ip ,val))
 
 (defmacro !fp (val)
-  `(setf *frstack* ,val))
+  `(setf fp ,val))
 
 (defmacro !base (val)
   `(setf @base ,val))
@@ -435,14 +435,14 @@
       (when-let (state up@+)
         (destructuring-bind (sav-ip sav-sp sav-fp sav-base)
             state
-          (setf ip sav-ip
-                sp sav-sp
-                rp nil
-                fp sav-fp
-                @base sav-base)
-          (inner-interp ip@+)
-          (go-iter)
-          )))
+          (let ((ip  sav-ip)
+                (sp  sav-sp)
+                (rp  nil)
+                (fp  sav-fp))
+            (!base sav-base)
+            (inner-interp ip@+)
+            (go-iter)
+            ))))
     (!sp sav-sp)
     ))
 
@@ -864,7 +864,8 @@
         *frstack*   nil ;; leave *pstack* alone for now...
         *pad-stack* nil
         (fill-pointer *pad*) 0
-        *display*   (list (make-frame)))
+        *display*   (list (make-frame))
+        *unwind-chain* nil)
   (setf (compiling?) nil)
   (reset-buffer))
 
