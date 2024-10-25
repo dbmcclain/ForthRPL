@@ -623,6 +623,18 @@
  : s:baba swap 2dup ;
  : s:bbaa swap 2dup rot ;
  
+;; --------------------------------------------
+;; DynVars
+
+code (dynvar)
+   (let ((var (derive-word '<dynvar>)))
+     (to-oper var tos)
+     (setf tos var)) }
+
+: dynvar   ( val -- )
+   (dynvar) define-word ;
+   
+   
  ;; 1-D arrays -------------------------------------------------------
 
  code allot (setf tos (make-array tos)) }
@@ -981,6 +993,40 @@ code (pop-prot)
 
     
 ;; --------------------------------------------
+;; Rebinding Dynvars
+
+code (rebinding)
+   (up-! *dynvars*)
+   (push (car *dynvars*) *dynvars*) }
+     
+code (pop-rebindings)
+     (setf *dynvars* up@+) }
+
+: rebinding
+    (rebinding) r>
+    protect
+    >>r<<
+    (pop-rebindings) ;
+
+;; --------------------------------------------
+
+code .u
+   (inspect (list up *dynvars*)) }
+
+0 dynvar x  0 dynvar y  0 dynvar z
+
+: .vars
+    << x y z >> . ;
+    
+: tst-reb
+   rebinding
+   .u
+    5 => x
+   15 => y
+   32 => z
+   .vars ;
+   
+;; --------------------------------------------
 ;; Dynamic Binding for Forth
 
 code (dyn-bind)
@@ -992,7 +1038,7 @@ code (dyn-bind)
     (nlet iter ((ct   0)
                 (acc  nil))
       (if (>= ct nel)
-          (push acc up)
+          (up-! acc)
         (let ((var  (aref vec ct))
               (val  (aref vec (1+ ct))))
           (go-iter (+ ct 2)
@@ -1016,6 +1062,8 @@ code (dyn-restore)
     protect
     >>r<<
     (dyn-restore) ;
+
+;; --------------------------------------------
 
 : >base<
     ;; ensure that BASE is restored on exit of caller.
@@ -1063,6 +1111,12 @@ code (dyn-restore)
 : ['] ' compiling @ if compile literal , then ; immediate
 : [,] compiling @ if compile literal then , ; immediate
 
+: =>
+   compiling @ if compile =>
+   else ' code{ (to-oper tos nos)
+                (setf sp  (cddr sp)) }
+   then ; immediate
+
 ;; --------------------------------------------
 
 : tst-dyn
@@ -1075,8 +1129,7 @@ code (dyn-restore)
     << base    16.
        tstvar 511. >> dyn-bind
    base tstvar 2 ->lst . cr
-   if error" Wjat!!" then
-   ;
+   if error" Wjat!!" then ;
 
 ;; --------------------------------------------
 ;; Proper Comments & Conditional Compilation
@@ -1753,4 +1806,8 @@ verify-stack-empty
 .end)
 
 
+;; --------------------------------------------
 
+(defun doit ()
+  (goforth)
+  (interactive))

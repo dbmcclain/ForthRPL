@@ -195,6 +195,8 @@
 (defparameter *rstack*  nil)
 (defparameter *frstack* nil)
 
+(defparameter *dynvars* (list (maps:empty)))
+
 (defstruct user
   (context   (make-fcell *tic-forth*))
   (current   (make-fcell *tic-forth*))
@@ -693,6 +695,26 @@
 (defun not-a-var (dst)
   (error "Not a variable: ~A" (name-of dst)))
 
+;; --------------------------------------------
+;; Dynvars
+
+(defclass <dynvar> (<scode-def>)
+  ()
+  (:default-initargs
+   :verb-type "DYNVAR"
+   :has-data? nil
+   :dfa       (gensym)
+   :cfa       'do-dynvar
+   ))
+
+(defun do-dynvar (self)
+  (sp-! (lookup-dynvar self)))
+
+(defun lookup-dynvar (self)
+  (maps:find (car *dynvars*) (data-of self)))
+
+;; --------------------------------------------
+
 (defgeneric to-oper (dst x)
   (:method ((dst <constant>) x)
    (let ((place (data-of dst)))
@@ -705,6 +727,10 @@
    (destructuring-bind (lvl pos) (data-of dst)
      (setf (aref (nth lvl *frstack*) pos) x)
      ))
+  (:method ((dst <dynvar>) x)
+   (setf (car *dynvars*)
+         (maps:add (car *dynvars*) (data-of dst) x)
+         ))
   (:method (dst x)
    (not-a-var dst)))
 
