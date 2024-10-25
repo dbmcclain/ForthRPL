@@ -426,41 +426,35 @@
 ;; Unwind-Protect support for Forth code
 
 (defstruct prot-frame
-  ip sp fp dp base)
+  ip fp dp base)
 
 (defun forth-protect (ip)
   (up-! (make-prot-frame
-         :ip   ip  ;; user's recovery ip
-         :sp   sp
+         :ip   ip  ;; user's unwind ip
          :fp   fp
          :dp   *dynvars*
          :base @base)
         ))
 
 (defun forth-unwind ()
-  (let ((sav-sp  sp))
-    (nlet iter ()
-      (when-let (state up@+)
-        (cond ((prot-frame-p state)
-               (with-accessors ((sav-ip   prot-frame-ip)
-                                (sav-sp   prot-frame-sp)
-                                (sav-fp   prot-frame-fp)
-                                (sav-dp   prot-frame-dp)
-                                (sav-base prot-frame-base)) state
-                 (let ((*reg-i*   sav-ip)
-                       (*pstack*  sav-sp)
-                       (*rstack*  nil)
-                       (*frstack* sav-fp)
-                       (*dynvars* sav-dp))
-                   (!base sav-base)
-                   (inner-interp ip@+)
-                   (go-iter)
-                   )))
-              (t
-               (go-iter))
-              )))
-    (!sp sav-sp)
-    ))
+  (nlet iter ()
+    (when-let (state up@+)
+      (cond ((prot-frame-p state)
+             (with-accessors ((sav-ip   prot-frame-ip)
+                              (sav-fp   prot-frame-fp)
+                              (sav-dp   prot-frame-dp)
+                              (sav-base prot-frame-base)) state
+               (setf *reg-i*   sav-ip
+                     *rstack*  nil
+                     *frstack* sav-fp
+                     *dynvars* sav-dp)
+               (!base sav-base)
+               (inner-interp ip@+)
+               (go-iter)
+               ))
+            (t
+             (go-iter))
+            ))))
 
 (defparameter *dummy-prot*
   (list (make-instance '<code-def>
@@ -734,15 +728,16 @@
   (sp-! (lookup-dynvar self)))
 
 (defun lookup-dynvar (self)
-  (maps:find (car *dynvars*) (data-of self)))
+  (car (maps:find (car *dynvars*) (data-of self))))
 
 ;; --------------------------------------------
 
 (defgeneric to-oper (dst x)
   (:method ((dst <constant>) x)
    (let ((place (data-of dst)))
-     (if (arrayp place)
-         (setf (aref place 0) x)
+     (if (and (arrayp place)
+              (not (arrayp x)))
+         (setf (@fcell place) x)
        ;; else
        (setf (data-of dst) x))
      ))
@@ -751,9 +746,12 @@
      (setf (aref (nth lvl *frstack*) pos) x)
      ))
   (:method ((dst <dynvar>) x)
-   (setf (car *dynvars*)
-         (maps:add (car *dynvars*) (data-of dst) x)
-         ))
+   (let* ((key  (data-of dst))
+          (vecs (maps:find (car *dynvars*) key)))
+     (if (arrayp x)
+         (setf (car vecs) x)
+       (setf (@fcell (car vecs)) x))
+     ))
   (:method (dst x)
    (not-a-var dst)))
 

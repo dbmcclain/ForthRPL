@@ -627,8 +627,11 @@
 ;; DynVars
 
 code (dynvar)
-   (let ((var (derive-word '<dynvar>)))
-     (to-oper var tos)
+   (let* ((var (derive-word '<dynvar>))
+          (lst (list (vector tos)))
+          (key (data-of var)))
+     (setf (car *dynvars*)
+           (maps:add (car *dynvars*) key lst))
      (setf tos var)) }
 
 : dynvar   ( val -- )
@@ -985,12 +988,37 @@ code (pop-prot)
 
     
 ;; --------------------------------------------
-;; Rebinding Dynvars
+;; Rebinding Dynvars - Closer to real dynamic binding.
+;;
+;; Uses an FPL Red-Black Tree to contain dynvars. Copying all bindings
+;; is as simple as making a copy of the tree root pointer.
+;;
+;; Updates cause the tree to non-destructively morph into a different
+;; tree.  The prior version remains if anyone has a binding to it.
+;; O(Log2 N) lookup times.
+;;
+;; REBINDING takes a quotation whose list of i-codes should be
+;; dynvars. Each of them has its current binding copied and stacked
+;; for subsequent use, leaving prior bindings in place in the dynvar
+;; stack.
+;;
 
 code (rebinding)
-   (up-! *dynvars*)
-   (push (car *dynvars*) *dynvars*) }
-     
+   (let* ((dvars  *dynvars*))
+     (up-! dvars)                  ;; save current bindings for restore
+     (push (car dvars) *dynvars*)  ;; copy bindings into new context
+     (nlet iter ((lst  (icode-of (pop rp@)))) ;; get list of vars
+       (when lst
+         (let ((var (car lst)))
+           (when (typep var '<dynvar>)
+             (let* ((key   (data-of var))
+                    (vecs  (maps:find (car *dynvars*) key)))
+               (setf (car *dynvars*)
+                     (maps:add (car *dynvars*) key (cons (copy-seq (car vecs)) vecs)))
+               )))
+         (go-iter (cdr lst))
+         ))) }
+
 code (pop-rebindings)
      (setf *dynvars* up@+) }
 
@@ -1007,18 +1035,18 @@ code .u
 0 dynvar x  0 dynvar y  0 dynvar z
 
 : .vars
-    << x y z >> . ;
+    << x @ y @ z @ >> . ;
     
 : tst-reb
-   rebinding
+   rebinding { x y z }
    .u
-    5 => x
-   15 => y
-   32 => z
+    5 x !
+   15 y !
+   32 z !
    .vars ;
    
 ;; --------------------------------------------
-;; Dynamic Binding for Forth
+;; Replacement Bindings for Forth - change a var and have it restored on exit.
 
 code (dyn-bind)
   ;; construct a dyn-restore list, exchange with RTOS to place
