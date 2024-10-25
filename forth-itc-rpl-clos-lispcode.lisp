@@ -188,7 +188,7 @@
 
 
 ;; -----------------------------------------------------------
-;; User Areas - one per machine thread
+;; RPL Registers
 
 (defparameter *reg-i*   nil)
 (defparameter *pstack*  nil)
@@ -196,6 +196,9 @@
 (defparameter *frstack* nil)
 
 (defparameter *dynvars* (list (maps:empty)))
+
+;; -----------------------------------------------------------
+;; User Areas - one per machine thread
 
 (defstruct user
   (context   (make-fcell *tic-forth*))
@@ -422,31 +425,51 @@
 ;; --------------------------------------------
 ;; Unwind-Protect support for Forth code
 
-(defun forth-protect ()
-  (up-! (list
-         (cdr rp@)  ;; user's recovery ip
-         sp
-         fp
-         @base)
+(defstruct prot-frame
+  ip sp fp dp base)
+
+(defun forth-protect (ip)
+  (up-! (make-prot-frame
+         :ip   ip  ;; user's recovery ip
+         :sp   sp
+         :fp   fp
+         :dp   *dynvars*
+         :base @base)
         ))
 
 (defun forth-unwind ()
   (let ((sav-sp  sp))
     (nlet iter ()
       (when-let (state up@+)
-        (destructuring-bind (sav-ip sav-sp sav-fp sav-base)
-            state
-          (let ((*reg-i*   sav-ip)
-                (*pstack*  sav-sp)
-                (*rstack*  nil)
-                (*frstack* sav-fp))
-            (!base sav-base)
-            (inner-interp ip@+)
-            (go-iter)
-            ))))
+        (cond ((prot-frame-p state)
+               (with-accessors ((sav-ip   prot-frame-ip)
+                                (sav-sp   prot-frame-sp)
+                                (sav-fp   prot-frame-fp)
+                                (sav-dp   prot-frame-dp)
+                                (sav-base prot-frame-base)) state
+                 (let ((*reg-i*   sav-ip)
+                       (*pstack*  sav-sp)
+                       (*rstack*  nil)
+                       (*frstack* sav-fp)
+                       (*dynvars* sav-dp))
+                   (!base sav-base)
+                   (inner-interp ip@+)
+                   (go-iter)
+                   )))
+              (t
+               (go-iter))
+              )))
     (!sp sav-sp)
     ))
 
+(defparameter *dummy-prot*
+  (list (make-instance '<code-def>
+                       :lfa nil
+                       :cfa (lambda (self)
+                              (declare (ignore self))
+                              (!ip nil)))
+        ))
+        
 ;; --------------------------------------------
 
 (defun must-find (w)
@@ -870,8 +893,10 @@
  
 (defun run-interpreter (w)
   (catch 'done
-    (inner-interp w))
-  (forth-unwind))
+    (forth-protect *dummy-prot*)
+    (unwind-protect
+        (inner-interp w)
+      (forth-unwind))))
 
 (defun run-interactive-interpreter (w)
   ;; make the interactive interpreter immune to bomb-outs
@@ -879,12 +904,13 @@
     (with-simple-restart (abort "Terminate Session")
       (um:nlet iter ()
         (with-simple-restart (abort "Continiue Session")
-          (inner-interp w))
-        (forth-unwind)
+          (forth-protect *dummy-prot*)
+          (unwind-protect
+              (inner-interp w)
+            (forth-unwind)))
         (reset-interpreter)
         (go-iter))
-      ))
-  (forth-unwind))
+      )))
 
 (defun reset-interpreter ()
   (setf *reg-i*     nil
@@ -893,7 +919,8 @@
         *pad-stack* nil
         (fill-pointer *pad*) 0
         *display*   (list (make-frame))
-        *unwind-chain* nil)
+        *unwind-chain* nil
+        *dynvars*   (last *dynvars*))
   (setf (compiling?) nil)
   (reset-buffer))
 

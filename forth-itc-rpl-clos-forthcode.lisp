@@ -959,21 +959,22 @@ code (>>r<<)
     ;; Same as: r> r> swap <r <r <r
     (>>r<<) ;
 
-;;; : >base<
-;;;     ;; Save base, perform caller's code, restore base on its exit
-;;;     ;; This version *NOT* robust against errors. See below for better.
-;;;     base @ <<r
-;;;     >r<
-;;;     r> base ! ;
+;; --------------------------------------------
+
+: >base<
+     ;; Save base, perform caller's code, restore base on its exit.
+     base @ <<r
+     >r<
+     r> base ! ;
 
 ;; --------------------------------------------
 ;; Unwind-Protect
 
 code (protect)
-    (forth-protect) }
+    (forth-protect (cdr rp@)) }
 
 code (pop-prot)
-     (pop up) }
+     up@+) }
      
 : protect
     ;; Protect one word following the use of protect in the caller's code.
@@ -981,15 +982,6 @@ code (pop-prot)
     (protect)
     >r<
     (pop-prot) ;
-
-    
-;;; : >base<
-;;;     ;; Save base, perform caller's code, restore base on its exit
-;;;     ;; This version protected against errors.
-;;;     r> base @ <r
-;;;     protect
-;;;     >>r<<
-;;;     r> base ! ;
 
     
 ;; --------------------------------------------
@@ -1003,9 +995,8 @@ code (pop-rebindings)
      (setf *dynvars* up@+) }
 
 : rebinding
-    (rebinding) r>
-    protect
-    >>r<<
+    (rebinding)
+    >r<
     (pop-rebindings) ;
 
 ;; --------------------------------------------
@@ -1063,15 +1054,6 @@ code (dyn-restore)
     >>r<<
     (dyn-restore) ;
 
-;; --------------------------------------------
-
-: >base<
-    ;; ensure that BASE is restored on exit of caller.
-    r>
-    << base dup @ >> dyn-bind
-    <r ;
-    
-    
 ;; --------------------------------------------------------------
 
  : spaces    0 do space loop ;
