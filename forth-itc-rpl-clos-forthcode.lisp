@@ -628,10 +628,10 @@
 
 code (dynvar)
    (let* ((var (derive-word '<dynvar>))
-          (lst (list (vector tos)))
+          (val (list tos))
           (key (data-of var)))
-     (setf (car *dynvars*)
-           (maps:add (car *dynvars*) key lst))
+     (setf (caar *dynvars*)
+           (maps:add (caar *dynvars*) key val))
      (setf tos var)) }
 
 : dynvar   ( val -- )
@@ -1005,16 +1005,16 @@ code (pop-prot)
 
 code (rebinding)
    (let* ((dvars  *dynvars*))
-     (up-! dvars)                  ;; save current bindings for restore
-     (push (car dvars) *dynvars*)  ;; copy bindings into new context
+     (up-! dvars)                             ;; save current bindings for restore
+     (push (list (caar dvars)) *dynvars*)     ;; copy bindings into new context
      (nlet iter ((lst  (icode-of (pop rp@)))) ;; get list of vars
        (when lst
          (let ((var (car lst)))
            (when (typep var '<dynvar>)
              (let* ((key   (data-of var))
-                    (vecs  (maps:find (car *dynvars*) key)))
-               (setf (car *dynvars*)
-                     (maps:add (car *dynvars*) key (cons (copy-seq (car vecs)) vecs)))
+                    (val   (lookup-dynvar var)))
+               (setf (caar *dynvars*)
+                     (maps:add (caar *dynvars*) key (list (car val)) ))
                )))
          (go-iter (cdr lst))
          ))) }
@@ -1028,6 +1028,21 @@ code (pop-rebindings)
     (pop-rebindings) ;
 
 ;; --------------------------------------------
+;; Example REBINDING:
+;; The following is roughly equivalent to:
+;;
+;;   (defvar x 0)  ;; <-- x, y, z are "Special" bindings
+;;   (defvar y 0)
+;;   (defvar z 0)
+;;
+;;   (let ((x  x)  ;; rebinding of specials
+;;         (y  y)
+;;         (z  z))
+;;      (setf x  5  ;; mutation of rebound specials
+;;            y 15  ;; does not affect the outer global bindings
+;;            z 32)
+;;      ...
+;;     )
 
 code .u
    (inspect (list up *dynvars*)) }
@@ -1035,14 +1050,14 @@ code .u
 0 dynvar x  0 dynvar y  0 dynvar z
 
 : .vars
-    << x @ y @ z @ >> . ;
+    << x y z >> . ;
     
 : tst-reb
    rebinding { x y z }
    .u
-    5 x !
-   15 y !
-   32 z !
+    5 => x
+   15 => y
+   32 => z
    .vars ;
    
 ;; --------------------------------------------

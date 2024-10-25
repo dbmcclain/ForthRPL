@@ -186,7 +186,6 @@
 ;; each frame is (cons compile-state . locals)
 ;; first one applies to toplevel non-compiling state
 
-
 ;; -----------------------------------------------------------
 ;; RPL Registers
 
@@ -195,7 +194,38 @@
 (defparameter *rstack*  nil)
 (defparameter *frstack* nil)
 
-(defparameter *dynvars* (list (maps:empty)))
+;; --------------------------------------------
+;; *dynvars* is a list, each element of which is a tree root pointer
+;; encased in a CONS cell. This makes it possible to update that root
+;; pointer while not affecting identity of the enclosing CONS cell.
+;;
+;; In that way, we can add bindings to the base *dynvars* and they
+;; will be retained on an unwind.
+;;
+;; During REBIND we copy the tree root pointer in the top CONS cell of
+;; the *dynvars* list, wrap a new CONS cell around it, and push it
+;; onto the *dynvars* list. That way new trees constructed along the
+;; way with rebound dynvar values, will affect only the top CONS cell
+;; of the *dynvars* list,
+;;
+;; At all times, the relevant tree root pointer is located at:
+;;
+;;    (CAAR *dynvars*)
+;;
+;; and that is the location that should receive the new tree root
+;; pointer after any tree modifications. (Got that?)
+;;
+;; Similarly, each dynvar in the tree is a value encased in a CONS
+;; cell. That way, on rebindings with the same value, a new CONS cell
+;; is wrapped around the old value to make it appear as a fresh new
+;; value to the FPL RB Tree. Same values, at the moment, but different
+;; tree.
+;;
+;; This is similar to encasing a mutable cell inside a CONS cell so
+;; that CAS can operate on the CONS cell. The identity of the CONS
+;; cell remains fixed, while the inner contained value can mutate.
+
+(defparameter *dynvars* (list (list (maps:empty))))
 
 ;; -----------------------------------------------------------
 ;; User Areas - one per machine thread
@@ -725,20 +755,20 @@
    ))
 
 (defun do-dynvar (self)
-  (sp-! (lookup-dynvar self)))
+  (sp-! (car (lookup-dynvar self))))
 
 (defun lookup-dynvar (self)
-  (car (maps:find (car *dynvars*) (data-of self))))
+  ;; return the list of bindings - the top one is the currently active
+  ;; binding
+  (maps:find (caar *dynvars*) (data-of self)))
 
 ;; --------------------------------------------
 
 (defgeneric to-oper (dst x)
   (:method ((dst <constant>) x)
    (let ((place (data-of dst)))
-     (if (and (arrayp place)
-              (not (arrayp x)))
+     (if (arrayp place) ;; are we actually a VARIABLE?
          (setf (@fcell place) x)
-       ;; else
        (setf (data-of dst) x))
      ))
   (:method ((dst <local-accessor>) x)
@@ -746,12 +776,8 @@
      (setf (aref (nth lvl *frstack*) pos) x)
      ))
   (:method ((dst <dynvar>) x)
-   (let* ((key  (data-of dst))
-          (vecs (maps:find (car *dynvars*) key)))
-     (if (arrayp x)
-         (setf (car vecs) x)
-       (setf (@fcell (car vecs)) x))
-     ))
+   (let ((val (lookup-dynvar dst)))
+     (setf (car val) x)))
   (:method (dst x)
    (not-a-var dst)))
 
