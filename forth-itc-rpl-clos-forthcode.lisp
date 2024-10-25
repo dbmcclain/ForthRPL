@@ -630,8 +630,8 @@ code (dynvar)
    (let* ((var (derive-word '<dynvar>))
           (val (list tos))
           (key (data-of var)))
-     (setf (caar *dynvars*)
-           (maps:add (caar *dynvars*) key val))
+     (setf dynvar-tree
+           (maps:add dynvar-tree key val))
      (setf tos var)) }
 
 : dynvar   ( val -- )
@@ -1004,17 +1004,16 @@ code (pop-prot)
 ;;
 
 code (rebinding)
-   (let* ((dvars  *dynvars*))
-     (up-! dvars)                             ;; save current bindings for restore
-     (push (list (caar dvars)) *dynvars*)     ;; copy bindings into new context
+     (up-! *dynvars*)                        ;; save current bindings for restore
+     (push (list dynvar-tree) *dynvars*)     ;; copy bindings into new context
      (nlet iter ((lst  (icode-of (pop rp@)))) ;; get list of vars
        (when lst
          (let ((var (car lst)))
            (when (typep var '<dynvar>)
              (let* ((key   (data-of var))
                     (val   (lookup-dynvar var)))
-               (setf (caar *dynvars*)
-                     (maps:add (caar *dynvars*) key (list (car val)) ))
+               (setf dynvar-tree
+                     (maps:add dynvar-tree key (list (car val)) ))
                )))
          (go-iter (cdr lst))
          ))) }

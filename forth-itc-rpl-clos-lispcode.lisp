@@ -227,6 +227,8 @@
 
 (defparameter *dynvars* (list (list (maps:empty))))
 
+(define-symbol-macro dynvar-tree   (caar *dynvars*))
+
 ;; -----------------------------------------------------------
 ;; User Areas - one per machine thread
 
@@ -760,7 +762,7 @@
 (defun lookup-dynvar (self)
   ;; return the list of bindings - the top one is the currently active
   ;; binding
-  (maps:find (caar *dynvars*) (data-of self)))
+  (maps:find dynvar-tree (data-of self)))
 
 ;; --------------------------------------------
 
