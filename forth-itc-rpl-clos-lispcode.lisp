@@ -263,31 +263,36 @@
 (define-symbol-macro ip@+  (pop ip))
 (define-symbol-macro fp@+  (pop fp))
 (define-symbol-macro ps@+  (pop *pad-stack*))
+(define-symbol-macro up@+  (pop up))
 
 ;; And ideally, these would be written SP-)!. But Lisp won't allow this.
 (defmacro sp-! (val)
-  `(push ,val *pstack*))
+  `(push ,val sp))
 
 (defmacro rp-! (val)
-  `(push ,val *rstack*))
+  `(push ,val rp))
 
 (defmacro fp-! (val)
-  `(push ,val *frstack*))
+  `(push ,val fp))
 
 (defmacro ps-! (val)
   `(push ,val *pad-stack*))
 
+(defmacro up-! (val)
+  `(push ,val up))
 
-(defmacro sp! (val)
+
+
+(defmacro !sp (val)
   `(setf *pstack* ,val))
 
-(defmacro rp! (val)
+(defmacro !rp (val)
   `(setf *rstack* ,val))
 
-(defmacro ip! (val)
+(defmacro !ip (val)
   `(setf *reg-i* ,val))
 
-(defmacro fp! (val)
+(defmacro !fp (val)
   `(setf *frstack* ,val))
 
 (defmacro !base (val)
@@ -417,43 +422,29 @@
 ;; Unwind-Protect support for Forth code
 
 (defun forth-protect ()
-  (push (list
+  (up-! (list
          (cdr rp@)  ;; user's recovery ip
          sp
-         (cdr rp)
          fp
          @base)
-        up))
-
-(defparameter *do-exit*
-  ;; Normal return from colon-words. Pop r-stack into ip and continue.
-  (lambda ()
-    (ip! rp@+)))
+        ))
 
 (defun forth-unwind ()
-  (let ((*do-exit* (lambda ()
-                     ;; Turn restoration clauses into isolated functions
-                     ;; by not allowing return to original callers.
-                     (ip! nil))
-                   ))
+  (let ((sav-sp  sp))
     (nlet iter ()
-      (when-let (state (pop up))
-        (destructuring-bind (sav-ip sav-sp sav-rp sav-fp sav-base)
+      (when-let (state up@+)
+        (destructuring-bind (sav-ip sav-sp sav-fp sav-base)
             state
           (setf ip sav-ip
                 sp sav-sp
-                rp sav-rp
+                rp nil
                 fp sav-fp
                 @base sav-base)
           (inner-interp ip@+)
           (go-iter)
-          ))
-      (setf ip  nil
-            sp  nil
-            rp  nil
-            fp  nil
-            @base 10.)
-      )))
+          )))
+    (!sp sav-sp)
+    ))
 
 ;; --------------------------------------------
 
@@ -544,7 +535,7 @@
 (defun docol (self)
   ;; For : words
   (rp-! *reg-i*)
-  (ip! (icode-of self)))
+  (!ip (icode-of self)))
 
 (defun doval (self)
   ;; For data words
@@ -638,13 +629,13 @@
   (defun default-jmp (obj)
     (setf (car jv)  obj
           (cadr jv) *tic-exit*)
-    (ip! jv)))
+    (!ip jv)))
 
 (defgeneric do-jmp (self)
   (:method (self)
    (default-jmp self))
   (:method ((self <colon-def>))
-   (ip! (icode-of self))))
+   (!ip (icode-of self))))
 
 ;; ---------------------------------------------
 
@@ -880,7 +871,7 @@
 (defgeneric init-interpreter ()
   (:method () ;; defmethod, to allow for :after methods in metacompiler
    (reset-interpreter)
-   (sp! nil)))
+   (!sp nil)))
 
 ;; -------------------------------------------------------------------
 

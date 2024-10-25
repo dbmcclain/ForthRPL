@@ -45,9 +45,7 @@
   (sp-! ip@+))
 
 (code exit
-  ;; Variable (indirect) binding on EXIT function allows for normal as
-  ;; well as unwind behaviors.
-  (funcall *do-exit*))
+  (!ip rp@+))
 
 ;; CNOP -- a replaceable nop
 ;; we need a placeholder in some cases
@@ -120,7 +118,7 @@
        bl word)
 
 (code outer-again
-  (ip! (icode-of *tic-outer*)))
+  (!ip (icode-of *tic-outer*)))
 
 (colon outer
        bl-word find-or-quit interpret outer-again)
@@ -361,14 +359,14 @@
      (sp-! a)) }
 
  code dup   (sp-! tos) }
- code roll  (sp! (let ((ct sp@+))
+ code roll  (!sp (let ((ct sp@+))
                    (roll ct sp))) }
- code rot   (sp! (roll 2 sp)) }
- code -rot  (sp! (roll -2 sp)) }
+ code rot   (!sp (roll 2 sp)) }
+ code -rot  (!sp (roll -2 sp)) }
  
  code ndrop
   (let ((n tos))
-    (sp! (nthcdr (1+ n) sp))) }
+    (!sp (nthcdr (1+ n) sp))) }
 
  code 2dup
    (sp-! nos)
@@ -376,26 +374,26 @@
 
  code 2swap
   (destructuring-bind (a b c d . rest) sp
-    (sp! (list* c d a b rest))) }
+    (!sp (list* c d a b rest))) }
 
  code 2over
   (destructuring-bind (a b c d . rest) sp
-    (sp! (list* c d a b c d rest))) }
+    (!sp (list* c d a b c d rest))) }
 
  code 2rot
   (destructuring-bind (a b c d e f . rest) sp
-    (sp! (list* e f a b c d rest))) }
+    (!sp (list* e f a b c d rest))) }
 
  code -2rot
   (destructuring-bind (a b c d e f . rest) sp
-    (sp! (list* c d e f a b rest))) }
+    (!sp (list* c d e f a b rest))) }
 
  code 2swap-over
   (destructuring-bind (a b c d . rest) sp
-    (sp! (list* a b c d a b rest))) }
+    (!sp (list* a b c d a b rest))) }
 
  code 2drop
-  (sp! (cddr sp)) }
+  (!sp (cddr sp)) }
 
  code depth
   (sp-! (length sp)) }
@@ -411,19 +409,19 @@
   (let ((nel sp@+))
     (multiple-value-bind (hd tl)
         (um:split nel sp)
-      (sp! (cons (nreverse hd) tl))
+      (!sp (cons (nreverse hd) tl))
       )) }
 
  code ->lst*
   (let ((nel sp@+))
     (multiple-value-bind (hd tl)
         (um:split nel sp)
-      (sp! (cons (append (nreverse (cdr hd)) (car hd)) tl))
+      (!sp (cons (append (nreverse (cdr hd)) (car hd)) tl))
       )) }
 
  code lst->
    (let ((lst  sp@+))
-     (sp! (cons (length lst) (nconc (reverse lst) sp)) )) }
+     (!sp (cons (length lst) (nconc (reverse lst) sp)) )) }
 
  : pop   ( lst -- [cdr lst] [car lst] )
     dup cdr
@@ -439,7 +437,7 @@
   (let ((nel sp@+))
     (multiple-value-bind (hd tl)
         (um:split nel sp)
-      (sp! (cons (make-array nel
+      (!sp (cons (make-array nel
                              :initial-contents (nreverse hd))
                          tl)))) }
 
@@ -449,7 +447,7 @@
     ;; be careful here... this could also be applied to a list
     ;; in which case the (coerce seq 'list) would return the original argument
     ;; might not be safe to nreverse that original list
-    (sp! (cons (length seq) (nconc (reverse lst) sp)))) }
+    (!sp (cons (length seq) (nconc (reverse lst) sp)))) }
 
  code copy-vec
    (setf tos (copy-seq tos)) }
@@ -705,7 +703,7 @@
  code inspect (inspect sp@+) }
  code cr      (terpri) }
  code space   (princ #\space) }
- code cls     (sp! nil) }
+ code cls     (!sp nil) }
  
  code (show) (decompile sp@+) }
  : show ' (show) ;
@@ -734,7 +732,7 @@
     (setf (car location) addr)) }
 
  code (br)
-  (ip! ip@) }
+  (!ip ip@) }
  ' (br) mark-skip
 
  ;; begin .. end
@@ -767,12 +765,12 @@
  code (if)
   (if sp@+
       ip@+
-    (ip! ip@)) }
+    (!ip ip@)) }
  ' (if) mark-skip
 
  code (ifnot)
   (if sp@+
-      (ip! ip@)
+      (!ip ip@)
     ip@+) }
  ' (ifnot) mark-skip
 
@@ -781,7 +779,7 @@
        ip@+
      (progn
        sp@+
-       (ip! ip@))) }
+       (!ip ip@))) }
 
  code nop }
 
@@ -809,7 +807,7 @@
   (let* ((ix    sp@+)
          (limit sp@+))
     (if (= ix limit)
-        (ip! ip@)
+        (!ip ip@)
       (progn
         (rp-! limit)
         (rp-! ix)
@@ -822,9 +820,9 @@
     (if (< ix (cadr rp))
         (progn
           (setf rp@ ix)
-          (ip! ip@))
+          (!ip ip@))
       (progn
-        (rp! (cddr rp))
+        (!rp (cddr rp))
         ip@+)
       )) }
  ' (loop) mark-skip
@@ -836,17 +834,17 @@
         (if (>= ix (cadr rp))
             (progn
               (setf rp@ ix)
-              (ip! ip@))
+              (!ip ip@))
           (progn
-            (rp! (cddr rp))
+            (!rp (cddr rp))
             ip@+))
 
       (if (< ix (cadr rp))
           (progn
             (setf rp@ ix)
-            (ip! ip@))
+            (!ip ip@))
         (progn
-          (rp! (cddr rp))
+          (!rp (cddr rp))
           ip@+)))
     ) }
  ' (+loop) mark-skip
@@ -936,7 +934,8 @@ code .r
 
 code (>>r<<)
     (rotatef rtos rnos)
-    (rp-! sp@+) }
+    ;; (rp-! sp@+)
+    (!ip sp@+) }
     
 : >>r<<   ( fn -- )
     ;; Expect an ip continuation on stack. Re-order return addrs, to
@@ -948,12 +947,12 @@ code (>>r<<)
     ;; Same as: r> r> swap <r <r <r
     (>>r<<) ;
 
-: >base<
-    ;; Save base, perform caller's code, restore base on its exit
-    ;; This version *NOT* robust against errors. See below for better.
-    base @ <<r
-    >r<
-    r> base ! ;
+;;; : >base<
+;;;     ;; Save base, perform caller's code, restore base on its exit
+;;;     ;; This version *NOT* robust against errors. See below for better.
+;;;     base @ <<r
+;;;     >r<
+;;;     r> base ! ;
 
 ;; --------------------------------------------
 ;; Unwind-Protect
@@ -969,14 +968,16 @@ code (pop-prot)
     >r<
     (pop-prot) ;
 
-: >base<
-    ;; Save base, perform caller's code, restore base on its exit
-    ;; This version protected against errors.
-    r> base @ <r
-    protect
-    >>r<<
-    r> base ! ;
+    
+;;; : >base<
+;;;     ;; Save base, perform caller's code, restore base on its exit
+;;;     ;; This version protected against errors.
+;;;     r> base @ <r
+;;;     protect
+;;;     >>r<<
+;;;     r> base ! ;
 
+    
 ;; --------------------------------------------
 ;; Dynamic Binding for Forth
 
@@ -984,12 +985,12 @@ code (dyn-bind)
   ;; construct a dyn-restore list, exchange with RTOS to place
   ;; the restore struct on the r-stack, and the return addr on the p-stack.
   ;; Will be used by the following [ PROTECT >>R<< ].
-  (let* ((vec  tos)
+  (let* ((vec  sp@+)
          (nel  (length vec)))
     (nlet iter ((ct   0)
                 (acc  nil))
       (if (>= ct nel)
-          (shiftf tos rtos acc)
+          (push acc up)
         (let ((var  (aref vec ct))
               (val  (aref vec (1+ ct))))
           (go-iter (+ ct 2)
@@ -1001,7 +1002,7 @@ code (dyn-bind)
 code (dyn-restore)
    ;; Expect a dyn-restore list on top of R-stack.
    ;; Restore the vars in the list, popping the r-stack.
-   (nlet iter ((lst rp@+))
+   (nlet iter ((lst up@+))
      (when lst
        (destructuring-bind (var val . rest) lst
          (setf (@fcell var) val)
@@ -1009,10 +1010,17 @@ code (dyn-restore)
        )) }
    
 : dyn-bind ( vars-vals n -- sav )
-    (dyn-bind)
+    (dyn-bind) r>
     protect
     >>r<<
     (dyn-restore) ;
+
+: >base<
+    ;; ensure that BASE is restored on exit of caller.
+    r>
+    << base dup @ >> dyn-bind
+    <r ;
+    
     
 ;; --------------------------------------------------------------
 
@@ -1179,7 +1187,7 @@ code :->;:  ;; ( pend-: nlocals -- pend-;: )
      (sp-! *frstack*) }
 
  code !env
-     (fp! sp@+) }
+     (!fp sp@+) }
     
  : make-closure ( fn env -- clos )
        2vec ;: @env <r
