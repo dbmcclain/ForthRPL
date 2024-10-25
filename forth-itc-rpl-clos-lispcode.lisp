@@ -207,7 +207,8 @@
   pad-stack
   (display   (list (make-frame)))
   tracing
-  reader)
+  reader
+  unwind-chain)
 
 (defparameter *user*  (make-user))
 
@@ -223,15 +224,16 @@
      ,@body))
 
 
-(define-symbol-macro *context*          (user-context   *user*))
-(define-symbol-macro *current*          (user-current   *user*))
-(define-symbol-macro *compiling*        (user-compiling *user*))
-(define-symbol-macro *base*             (user-base      *user*))
-(define-symbol-macro *pad*              (user-pad       *user*))
-(define-symbol-macro *display*          (user-display   *user*))
-(define-symbol-macro *tracing*          (user-tracing   *user*))
-(define-symbol-macro *next-word-reader* (user-reader    *user*))
-(define-symbol-macro *pad-stack*        (user-pad-stack *user*))
+(define-symbol-macro *context*          (user-context      *user*))
+(define-symbol-macro *current*          (user-current      *user*))
+(define-symbol-macro *compiling*        (user-compiling    *user*))
+(define-symbol-macro *base*             (user-base         *user*))
+(define-symbol-macro *pad*              (user-pad          *user*))
+(define-symbol-macro *display*          (user-display      *user*))
+(define-symbol-macro *tracing*          (user-tracing      *user*))
+(define-symbol-macro *next-word-reader* (user-reader       *user*))
+(define-symbol-macro *pad-stack*        (user-pad-stack    *user*))
+(define-symbol-macro *unwind-chain*     (user-unwind-chain *user*))
 
 ;; --------------------------------------------
 
@@ -244,19 +246,22 @@
 (define-symbol-macro rp    *rstack*)
 (define-symbol-macro ip    *reg-i*)
 (define-symbol-macro fp    *frstack*)
+(define-symbol-macro up    *unwind-chain*)
 
 ;; Ideally, these would be written like SP). But Lisp won't allow this.
-(define-symbol-macro sp@   (car *pstack*))
-(define-symbol-macro rp@   (car *rstack*))
-(define-symbol-macro ip@   (car *reg-i*))
-(define-symbol-macro fp@   (car *frstack*))
+(define-symbol-macro sp@   (car sp))
+(define-symbol-macro rp@   (car rp))
+(define-symbol-macro ip@   (car ip))
+(define-symbol-macro fp@   (car fp))
 (define-symbol-macro ps@   (car *pad-stack*))
 
+(define-symbol-macro @base (@fcell *base*))
+
 ;; Ideally, these would be written like SP)+. But Lisp won't allow this.
-(define-symbol-macro sp@+  (pop *pstack*))
-(define-symbol-macro rp@+  (pop *rstack*))
-(define-symbol-macro ip@+  (pop *reg-i*))
-(define-symbol-macro fp@+  (pop *frstack*))
+(define-symbol-macro sp@+  (pop sp))
+(define-symbol-macro rp@+  (pop rp))
+(define-symbol-macro ip@+  (pop ip))
+(define-symbol-macro fp@+  (pop fp))
 (define-symbol-macro ps@+  (pop *pad-stack*))
 
 ;; And ideally, these would be written SP-)!. But Lisp won't allow this.
@@ -284,6 +289,9 @@
 
 (defmacro fp! (val)
   `(setf *frstack* ,val))
+
+(defmacro !base (val)
+  `(setf @base ,val))
 
 ;; ------------------------------------------------------
 
@@ -384,7 +392,7 @@
   (forth-globals-lookup w voc))
 
 (defun do-with-users-base (fn)
-  (let ((*print-base* (@fcell *base*)))
+  (let ((*print-base* @base))
     (funcall fn)))
 
 (defmacro with-users-base (&body body)
@@ -395,6 +403,7 @@
    (with-users-base
      (apply #'format t fmt args)
      (terpri)
+     (forth-unwind)
      (abort)))
   (:method (obj &rest ignored)
    ;; allows use of a named object for reporting
@@ -403,6 +412,50 @@
 
 (defun huh? (s)
   (report-error " ~A ?" s))
+
+;; --------------------------------------------
+;; Unwind-Protect support for Forth code
+
+(defun forth-protect ()
+  (push (list
+         (cdr rp@)  ;; user's recovery ip
+         sp
+         (cdr rp)
+         fp
+         @base)
+        up))
+
+(defparameter *do-exit*
+  ;; Normal return from colon-words. Pop r-stack into ip and continue.
+  (lambda ()
+    (ip! rp@+)))
+
+(defun forth-unwind ()
+  (let ((*do-exit* (lambda ()
+                     ;; Turn restoration clauses into isolated functions
+                     ;; by not allowing return to original callers.
+                     (ip! nil))
+                   ))
+    (nlet iter ()
+      (when-let (state (pop up))
+        (destructuring-bind (sav-ip sav-sp sav-rp sav-fp sav-base)
+            state
+          (setf ip sav-ip
+                sp sav-sp
+                rp sav-rp
+                fp sav-fp
+                @base sav-base)
+          (inner-interp ip@+)
+          (go-iter)
+          ))
+      (setf ip  nil
+            sp  nil
+            rp  nil
+            fp  nil
+            @base 10.)
+      )))
+
+;; --------------------------------------------
 
 (defun must-find (w)
   (or (forth-globals-lookup w)
@@ -1083,7 +1136,7 @@
 (defun do-with-forth-standard-input (fn)
   (let ((*read-default-float-format* 'double-float)
         ;; (*read-eval* nil)
-        (*read-base* (@fcell *base*)))
+        (*read-base* @base))
     (funcall fn)))
 
 (defmacro with-forth-standard-input (&body body)

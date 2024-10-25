@@ -45,7 +45,9 @@
   (sp-! ip@+))
 
 (code exit
-  (ip! rp@+))
+  ;; Variable (indirect) binding on EXIT function allows for normal as
+  ;; well as unwind behaviors.
+  (funcall *do-exit*))
 
 ;; CNOP -- a replaceable nop
 ;; we need a placeholder in some cases
@@ -151,10 +153,7 @@
   (forth-compile-in ip@+))
 
 (code swap
-  (let ((a tos)
-        (b nos))
-    (setf nos a
-          tos b)))
+  (rotatef tos nos))
 
 (code drop
   sp@+)
@@ -218,8 +217,8 @@
 
 (colon finalize-code
         [  import-icode
-        pop-compile-context
-        set-current-context )
+        set-current-context
+        pop-compile-context )
 
 (colon }
         ;; try this out... at the end of a definition
@@ -342,14 +341,15 @@
  code j
       (sp-! (third rp)) }
 
+;; --------------------------------------------
+;; Stack twiddling
+
  code over
   (sp-! nos) }
 
  code swap-over
-  (let ((a tos))
-    (setf tos nos
-          nos a)
-    (sp-! a)) }
+    (rotatef tos nos)
+    (sp-! nos) }
 
  code swap-drop
    (let ((x  sp@+))
@@ -404,6 +404,9 @@
   (let ((n tos))
     (setf tos (nth (1+ n) sp))) }
 
+;; --------------------------------------------
+;; Lists
+
  code ->lst
   (let ((nel sp@+))
     (multiple-value-bind (hd tl)
@@ -429,6 +432,9 @@
  : push  ( lst x -- [cons x lst] )
     swap cons ;
     
+;; --------------------------------------------
+;; Vectors
+
  code ->vec
   (let ((nel sp@+))
     (multiple-value-bind (hd tl)
@@ -455,6 +461,27 @@
    (let* ((snd  sp@+)
           (fst  tos))
      (setf tos (vector fst snd))) }
+
+;; --------------------------------------------
+;; Easy construction of Vectors
+;;
+;; For #(a b c) enter: << a b c >>
+;; Same as:  a b c 3 ->vec
+ 
+ : <<  '<< ;
+
+ code >>
+   (let ((pos (position '<< sp)))
+     (unless pos
+       (report-error " Missing '<< stack mark"))
+     (multiple-value-bind (hd tl)
+         (um:split pos sp)
+       (let ((vec  (coerce (nreverse hd) 'vector)))
+         (setf  sp  tl
+                tos vec))
+       )) }
+   
+;; --------------------------------------------
 
  code string=
   ;; case insensitive
@@ -879,7 +906,115 @@
  ;; now give us a proper outer interpreter
  { begin bl-word ?dup-while (find) interpret repeat quit } ' outer patch
 
-  ;; --------------------------------------------------------------
+;; --------------------------------------------
+;; Special Return Stack Ops
+
+code rp)+
+   ;; when performed in a colon-def, assuming that def was called by
+   ;; another colon-def, this fetches the next ip-code op from caller,
+   ;; and advances the return address.
+   (sp-! (pop rp@)) }
+
+code >r<
+   ;; when performed in a colon-def, assuming that def was called by
+   ;; another colon-def, this swizzles the ip and return address, to
+   ;; resume the caller and set up to resume ourself on its exit
+   (rotatef rtos ip) }
+   
+code <<r
+   ;; stash stack item beneath ret addr
+   ;; equiv of inline: r> swap <r <r
+   (rp-! rtos)
+   (setf rnos sp@+) }
+
+code sp><rp
+   ;; exchange TOS with RTOS
+   (rotatef tos rtos) }
+   
+code .r
+  (inspect rp) }
+
+code (>>r<<)
+    (rotatef rtos rnos)
+    (rp-! sp@+) }
+    
+: >>r<<   ( fn -- )
+    ;; Expect an ip continuation on stack. Re-order return addrs, to
+    ;; make continuation function happen first, then pop-prot, then
+    ;; restoring code in caller of this function.
+    ;;
+    ;; Used by words that guard other words with protect-unwind.
+    ;;
+    ;; Same as: r> r> swap <r <r <r
+    (>>r<<) ;
+
+: >base<
+    ;; Save base, perform caller's code, restore base on its exit
+    ;; This version *NOT* robust against errors. See below for better.
+    base @ <<r
+    >r<
+    r> base ! ;
+
+;; --------------------------------------------
+;; Unwind-Protect
+
+code (protect)
+    (forth-protect) }
+
+code (pop-prot)
+     (pop up) }
+     
+: protect
+    (protect)
+    >r<
+    (pop-prot) ;
+
+: >base<
+    ;; Save base, perform caller's code, restore base on its exit
+    ;; This version protected against errors.
+    r> base @ <r
+    protect
+    >>r<<
+    r> base ! ;
+
+;; --------------------------------------------
+;; Dynamic Binding for Forth
+
+code (dyn-bind)
+  ;; construct a dyn-restore list, exchange with RTOS to place
+  ;; the restore struct on the r-stack, and the return addr on the p-stack.
+  ;; Will be used by the following [ PROTECT >>R<< ].
+  (let* ((vec  tos)
+         (nel  (length vec)))
+    (nlet iter ((ct   0)
+                (acc  nil))
+      (if (>= ct nel)
+          (shiftf tos rtos acc)
+        (let ((var  (aref vec ct))
+              (val  (aref vec (1+ ct))))
+          (go-iter (+ ct 2)
+                   (list* var
+                          (shiftf (@fcell var) val)
+                          acc)))
+        ))) }
+
+code (dyn-restore)
+   ;; Expect a dyn-restore list on top of R-stack.
+   ;; Restore the vars in the list, popping the r-stack.
+   (nlet iter ((lst rp@+))
+     (when lst
+       (destructuring-bind (var val . rest) lst
+         (setf (@fcell var) val)
+         (go-iter rest))
+       )) }
+   
+: dyn-bind ( vars-vals n -- sav )
+    (dyn-bind)
+    protect
+    >>r<<
+    (dyn-restore) ;
+    
+;; --------------------------------------------------------------
 
  : spaces    0 do space loop ;
 
@@ -892,28 +1027,46 @@
  : "  #\" word
      compiling @ if compile literal , then ; immediate -- " for confused Editor
 
- : ?compile compiling @ if r> dup car , cdr <r then ;
+ : ?compile compiling @ if rp)+ , then ;
 
  : ."     [compile] " ?compile . ; immediate
 
- code error (report-error sp@+) }
+ code error
+     (report-error sp@+) }
+
  : error" [compile] " ?compile error ; immediate
 
- : .base
+;; --------------------------------------------
+
+: .base
        base @
        case { #10r16 =  } { ." Hex"     }
             { #10r10 =  } { ." Decimal" }
             { #10r8  =  } { ." Octal"   }
             { #10r2  =  } { ." Binary"  }
-            { otherwise } { base @ decimal dup . base ! }
+            { otherwise } { >base< base @ decimal . }
        esac ;
 
- : verify-stack-empty
+: verify-stack-empty
      depth 0/= if cr .s error"   Something is dirty..." then ;
 
- : ['] ' compiling @ if compile literal , then ; immediate
- : [,] compiling @ if compile literal then , ; immediate
+: ['] ' compiling @ if compile literal , then ; immediate
+: [,] compiling @ if compile literal then , ; immediate
 
+;; --------------------------------------------
+
+: tst-dyn
+    << base 16 >> dyn-bind
+    .base ;
+
+0 variable tstvar
+
+: tst-unw
+    << base    16
+       tstvar 511 >> dyn-bind
+   base tstvar 2 ->lst . cr
+   if error" Wjat!!" then
+   ;
 
 ;; --------------------------------------------
 ;; Proper Comments & Conditional Compilation
@@ -980,11 +1133,9 @@
  code env>
     fp@+ }
 
- code ip)+  (sp-! (pop rp@)) }
-
  : (call-with-frame)
-      ip)+ ->vec
-      <env ip)+ execute env> ;
+      rp)+ ->vec
+      <env rp)+ execute env> ;
 
  code create-locals-frame
     (setf (frame-locals (car *display*)) sp@+) }
@@ -1005,9 +1156,6 @@ code :->;:  ;; ( pend-: nlocals -- pend-;: )
                    :verb-type ";:"
                    )) }
 
- code >r<  ;; resume caller and set up to resume ourself on his exit
-   (rotatef rtos ip) }
-   
  : (exec-with-frame)   ( lcl1 lcl2 ... nlocals -- )
      ->vec <env >r< env> ;
      
@@ -1040,7 +1188,7 @@ code :->;:  ;; ( pend-: nlocals -- pend-;: )
                r> !env ;
 
  : (closure)
-    ip)+ @env ?dup-if make-closure then ;
+    rp)+ @env ?dup-if make-closure then ;
 
   code toplevel?
     (sp-! (toplevel?)) }
@@ -1140,25 +1288,6 @@ code :->;:  ;; ( pend-: nlocals -- pend-;: )
 : !beh-of  !cfa ;
 : !icode-of !ifa ;
 
-;; --------------------------------------------
-;; Easy construction of Vectors
-;;
-;; For #(a b c) enter: << a b c >>
-;; Same as:  a b c 3 ->vec
- 
- : <<  '<< ;
-
- code >>
-   (let ((pos (position '<< sp)))
-     (unless pos
-       (report-error " Missing '<< stack mark"))
-     (multiple-value-bind (hd tl)
-         (um:split pos sp)
-       (let ((vec  (coerce (nreverse hd) 'vector)))
-         (setf  sp  tl
-                tos vec))
-       )) }
-   
 ;; --------------------------------------------
 ;; Dictionary Management
 #|
@@ -1527,7 +1656,7 @@ code pad>>
     then + code->ch ;
 : #   base @ /mod ->dig c, ;
 : #.  # #\. c, ;    
-: #:  base @ swap 6 base ! # swap base ! #\: c, ;
+: #:  6 base ! # decimal #\: c, ; ;; only makes sense in decimal context
 : ##: # #: ;
 : #s  begin
         #
@@ -1542,21 +1671,19 @@ code pad>>
     2dup base @ swap expt swap abs * round
     <<# swap n# #\. c, #s #sign #>> ;
 : 2dp  2 ndp ;
-    
-: in-decimal
-    ip)+ base @ <r decimal execute r> base ! ;
+
 : unipolar  1.0 mod ;
 : bipolar   0.5 + unipolar 0.5 - ;
     
 : dms  ( turns -- )
-    in-decimal
-    { bipolar dup abs 1296000. * round
-      <<# ##: ##: #s #sign+ #>> } ;
+    >base< decimal
+    bipolar dup abs 1296000. * round
+      <<# ##: ##: #s #sign+ #>> ;
       
 : hms  ( turns -- )
-    in-decimal
-    { unipolar 864000. * round 
-      <<# #. ##: ##: # # #>> } ;
+    >base< decimal
+    unipolar 864000. * round 
+      <<# #. ##: ##: # # #>> ;
     
 ;; --------------------------------------------
 
@@ -1579,6 +1706,20 @@ code ls
 code load 
       (interpret (hcl:file-string sp@+)) }
 FI#
+
+;; --------------------------------------------
+;; Actors
+
+code send
+  (ac:send* (coerce sp@+ 'list)) }
+
+code println
+  (sp-! ac:println) }
+
+code writeln
+  (sp-! ac:writeln) }
+
+<< println " Hello from ForthRPL!!" >> send
 
 ;; --------------------------------------------
 
