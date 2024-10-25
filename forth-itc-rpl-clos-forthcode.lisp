@@ -964,6 +964,8 @@ code (pop-prot)
      (pop up) }
      
 : protect
+    ;; Protect one word following the use of protect in the caller's code.
+    ;; All the rest of the code will be used as unwind code.
     (protect)
     >r<
     (pop-prot) ;
@@ -1070,8 +1072,8 @@ code (dyn-restore)
 0 variable tstvar
 
 : tst-unw
-    << base    16
-       tstvar 511 >> dyn-bind
+    << base    16.
+       tstvar 511. >> dyn-bind
    base tstvar 2 ->lst . cr
    if error" Wjat!!" then
    ;

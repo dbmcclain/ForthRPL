@@ -408,7 +408,6 @@
    (with-users-base
      (apply #'format t fmt args)
      (terpri)
-     (forth-unwind)
      (abort)))
   (:method (obj &rest ignored)
    ;; allows use of a named object for reporting
@@ -435,10 +434,10 @@
       (when-let (state up@+)
         (destructuring-bind (sav-ip sav-sp sav-fp sav-base)
             state
-          (let ((ip  sav-ip)
-                (sp  sav-sp)
-                (rp  nil)
-                (fp  sav-fp))
+          (let ((*reg-i*   sav-ip)
+                (*pstack*  sav-sp)
+                (*rstack*  nil)
+                (*frstack* sav-fp))
             (!base sav-base)
             (inner-interp ip@+)
             (go-iter)
@@ -845,7 +844,8 @@
  
 (defun run-interpreter (w)
   (catch 'done
-    (inner-interp w)))
+    (inner-interp w))
+  (forth-unwind))
 
 (defun run-interactive-interpreter (w)
   ;; make the interactive interpreter immune to bomb-outs
@@ -854,9 +854,11 @@
       (um:nlet iter ()
         (with-simple-restart (abort "Continiue Session")
           (inner-interp w))
+        (forth-unwind)
         (reset-interpreter)
         (go-iter))
-      )))
+      ))
+  (forth-unwind))
 
 (defun reset-interpreter ()
   (setf *reg-i*     nil
