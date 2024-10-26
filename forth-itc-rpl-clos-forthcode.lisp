@@ -5,18 +5,8 @@
 ;; ------------------------------------------------------------------
 
 ;; ------------------------------------------------------
-;; forth
-(initialize)
 
-;; --------------------------------------------
-;; VOCABULARY FORTH
-
-(let ((v  (make-instance '<vocabulary>
-                         :nfa  "FORTH"
-                         :lfa  nil)))
-  (setf *tic-forth*   v
-        (current-voc) v
-        (context-voc) v))
+(initialize)  ;; now we have FORTH and BASE
 
 ;; --------------------------------------------
 
@@ -36,8 +26,10 @@
 (code compiling
   (sp-! *compiling*))
 
+#|
 (code base
   (sp-! *base*))
+|#
 
 ;; --------------------------------------------
 
@@ -532,13 +524,16 @@
 
  ;; print- and read- base -------------------------------------------
 
- : @base   ( -- n ) base @ ;
- : !base   ( n -- ) base ! ;
+ code !base
+    (!base sp@+) }
+    
+;;  : @base   ( -- n ) base @ ;
+;;  : !base   ( n -- ) base ! ;
  : decimal #10r10 !base ;
  : hex     #10r16 !base ;
  : binary  #10r2  !base ;
  : print-with-radix ( v r -- )
-      @base swap !base swap . !base ;
+      base swap !base swap . !base ;
  : .decimal #10r10 print-with-radix ;
  : .hex     #10r16 print-with-radix ;
  : .binary  #10r2  print-with-radix ;
@@ -966,9 +961,9 @@ code (>>r<<)
 
 : >base<
      ;; Save base, perform caller's code, restore base on its exit.
-     base @ <<r
+     base <<r
      >r<
-     r> base ! ;
+     r> !base ;
 
 ;; --------------------------------------------
 ;; Unwind-Protect
@@ -1121,12 +1116,12 @@ code (dyn-restore)
 ;; --------------------------------------------
 
 : .base
-       base @
+       base
        case { #10r16 =  } { ." Hex"     }
             { #10r10 =  } { ." Decimal" }
             { #10r8  =  } { ." Octal"   }
             { #10r2  =  } { ." Binary"  }
-            { otherwise } { >base< base @ decimal . }
+            { otherwise } { >base< decimal base . }
        esac ;
 
 : verify-stack-empty
@@ -1143,15 +1138,14 @@ code (dyn-restore)
 
 ;; --------------------------------------------
 
-: tst-dyn
-    << base 16 >> dyn-bind
-    .base ;
+;;; : tst-dyn
+;;;     << base 16 >> dyn-bind
+;;;     .base ;
 
 0 variable tstvar
 
 : tst-unw
-    << base    16.
-       tstvar 511. >> dyn-bind
+    << tstvar 511. >> dyn-bind
    base tstvar 2 ->lst . cr
    if error" Wjat!!" then ;
 
@@ -1741,9 +1735,9 @@ code pad>>
     if [ #\A ch->code 10. - ] [,]
     else [ #\0 ch->code ] [,]
     then + code->ch ;
-: #   base @ /mod ->dig c, ;
+: #   base /mod ->dig c, ;
 : #.  # #\. c, ;    
-: #:  6 base ! # decimal #\: c, ; ;; only makes sense in decimal context
+: #:  6 !base # decimal #\: c, ; ;; only makes sense in decimal context
 : ##: # #: ;
 : #s  begin
         #
@@ -1755,7 +1749,7 @@ code pad>>
 : #sign+ 0< if #\- else #\+ then c, ;
 
 : ndp  ( val n -- )
-    2dup base @ swap expt swap abs * round
+    2dup base swap expt swap abs * round
     <<# swap n# #\. c, #s #sign #>> ;
 : 2dp  2 ndp ;
 

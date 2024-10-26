@@ -8,7 +8,7 @@
 ;; ------------------------------------------------------------------
 
 (defparameter *init-fns*
-  (make-array 16
+  (make-array 16.
               :adjustable   t
               :fill-pointer 0))
 
@@ -32,15 +32,17 @@
 (defparameter *tic-cnop*  nil)
 (defparameter *tic-outer* nil)
 (defparameter *tic-forth* nil)
+(defparameter *tic-base*  nil)
 
+;; --------------------------------------------
 (add-init
  (setf *meta-present* nil
        *tic-exit*     nil
        *tic-lit*      nil
        *tic-cnop*     nil
        *tic-outer*    nil
-       *tic-forth*    nil))
-
+       *tic-forth*    nil
+       *tic-base*     nil))
 ;; --------------------------------------------
 
 (defgeneric fw-nfa (x))
@@ -114,11 +116,15 @@
    (write obj)))
 
 ;; -----------------------------------------------------
+;; *SKIP-WORDS* -- a list of Forth defs that the decompiler should
+;; skip over - typically are branch target addresses.
 
 (defparameter *skip-words* nil)
 
+;; --------------------------------------------
 (add-init
  (setf *skip-words* nil))
+;; --------------------------------------------
 
 (defgeneric decompile-obj (obj)
   (:method ((obj <code-def>))
@@ -229,6 +235,15 @@
 
 (define-symbol-macro dynvar-tree   (caar *dynvars*))
 
+;; --------------------------------------------
+;; Setting up the initial DYNVARS tree
+
+(add-init
+  (setf *dynvars*  (list
+                    (list (maps:empty))
+                    ) ))
+;; --------------------------------------------
+
 ;; -----------------------------------------------------------
 ;; User Areas - one per machine thread
 
@@ -236,7 +251,6 @@
   (context   (make-fcell *tic-forth*))
   (current   (make-fcell *tic-forth*))
   (compiling (make-fcell))
-  (base      (make-fcell 10.))
   (pad       (make-array 80.
                          :element-type 'character
                          :adjustable   t
@@ -249,8 +263,10 @@
 
 (defparameter *user*  (make-user))
 
+;; --------------------------------------------
 (add-init
   (setf *user* (make-user)))
+;; --------------------------------------------
 
 (defmacro with-forth (&body body)
   `(let ((*user*    (make-user))
@@ -264,7 +280,6 @@
 (define-symbol-macro *context*          (user-context      *user*))
 (define-symbol-macro *current*          (user-current      *user*))
 (define-symbol-macro *compiling*        (user-compiling    *user*))
-(define-symbol-macro *base*             (user-base         *user*))
 (define-symbol-macro *pad*              (user-pad          *user*))
 (define-symbol-macro *display*          (user-display      *user*))
 (define-symbol-macro *tracing*          (user-tracing      *user*))
@@ -291,8 +306,6 @@
 (define-symbol-macro ip@   (car ip))
 (define-symbol-macro fp@   (car fp))
 (define-symbol-macro ps@   (car *pad-stack*))
-
-(define-symbol-macro @base (@fcell *base*))
 
 ;; Ideally, these would be written like SP)+. But Lisp won't allow this.
 (define-symbol-macro sp@+  (pop sp))
@@ -332,8 +345,16 @@
 (defmacro !fp (val)
   `(setf fp ,val))
 
-(defmacro !base (val)
-  `(setf @base ,val))
+;; --------------------------------------------
+
+(defun get-base ()
+  (car (lookup-dynvar *tic-base*)))
+
+(define-symbol-macro @base  (get-base))
+
+(defun !base (val)
+  (let ((cell (lookup-dynvar *tic-base*)))
+    (setf (car cell) val)))
 
 ;; ------------------------------------------------------
 
@@ -458,14 +479,13 @@
 ;; Unwind-Protect support for Forth code
 
 (defstruct prot-frame
-  ip fp dp base)
+  ip fp dp)
 
 (defun forth-protect (ip)
   (up-! (make-prot-frame
          :ip   ip  ;; user's unwind ip
          :fp   fp
-         :dp   *dynvars*
-         :base @base)
+         :dp   *dynvars*)
         ))
 
 (defun forth-unwind ()
@@ -474,13 +494,11 @@
       (cond ((prot-frame-p state)
              (with-accessors ((sav-ip   prot-frame-ip)
                               (sav-fp   prot-frame-fp)
-                              (sav-dp   prot-frame-dp)
-                              (sav-base prot-frame-base)) state
+                              (sav-dp   prot-frame-dp)) state
                (setf *reg-i*   sav-ip
                      *rstack*  nil
                      *frstack* sav-fp
                      *dynvars* sav-dp)
-               (!base sav-base)
                (inner-interp ip@+)
                (go-iter)
                ))
@@ -646,6 +664,16 @@
                       :nfa (string ',name)
                       ,@args))
 
+;; --------------------------------------------
+;; Adding VOCABULARY FORTH - first word in the dictionary
+
+(add-init
+  (let ((v  (make-instance '<vocabulary>
+                           :nfa "FORTH"
+                           :lfa nil)))
+    (setf *tic-forth*   v
+          (current-voc) v
+          (context-voc) v)))
 ;; ---------------------------------------------
 
 (defmacro code (name &body body)
@@ -764,6 +792,16 @@
   ;; binding
   (maps:find dynvar-tree (data-of self)))
 
+;; --------------------------------------------
+;; Adding DYNVAR BASE
+
+(add-init
+  (let ((v (link-derived-word '<dynvar>
+                              :nfa "BASE")))
+    (setf *tic-base*  v
+          dynvar-tree
+          (maps:add dynvar-tree (data-of v) (list 10.)))
+    ))
 ;; --------------------------------------------
 
 (defgeneric to-oper (dst x)
