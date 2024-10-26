@@ -23,10 +23,8 @@
 
 (let ((v (link-derived-word '<dynvar>
                             :nfa "BASE")))
-  (setf *tic-base*  v
-        dynvar-tree
-        (maps:add dynvar-tree (data-of v) (list 10.))
-        ))
+  (setf *tic-base*  v)
+  (add-dynvar v 10.))
 
 ;; --------------------------------------------
 
@@ -539,11 +537,8 @@
 ;; DynVars
 
 code (dynvar)
-   (let* ((var (derive-word '<dynvar>))
-          (val (list tos))
-          (key (data-of var)))
-     (setf dynvar-tree
-           (maps:add dynvar-tree key val))
+   (let* ((var (derive-word '<dynvar>)))
+     (add-dynvar var tos)
      (setf tos var)) }
 
 : dynvar   ( val -- )
@@ -551,7 +546,7 @@ code (dynvar)
    
  ;; print- and read- base -------------------------------------------
 
- : !base  => base ;
+ : !base   => base ;
  : decimal #10r10 !base ;
  : hex     #10r16 !base ;
  : octal   #10r8  !base ;
@@ -1014,13 +1009,11 @@ code (rebinding)
        (when lst
          (let ((var (car lst)))
            (when (typep var '<dynvar>)
-             (let* ((key   (data-of var))
-                    (val   (lookup-dynvar var)))
-               (setf dynvar-tree
-                     (maps:add dynvar-tree key (list (car val)) ))
+             (let ((val  (lookup-dynvar var)))
+               (add-dynvar var (car val))
                )))
          (go-iter (cdr lst))
-         ))) }
+         )) }
 
 code (pop-rebindings)
      (setf *dynvars* up@+) }

@@ -778,6 +778,10 @@
   ;; binding
   (maps:find dynvar-tree (data-of self)))
 
+(defun add-dynvar (var val)
+  (setf dynvar-tree
+        (maps:add dynvar-tree (data-of var) (list val))))
+
 ;; --------------------------------------------
 
 (defgeneric to-oper (dst x)
