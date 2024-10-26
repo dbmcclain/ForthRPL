@@ -352,10 +352,6 @@
 
 (define-symbol-macro @base  (get-base))
 
-(defun !base (val)
-  (let ((cell (lookup-dynvar *tic-base*)))
-    (setf (car cell) val)))
-
 ;; ------------------------------------------------------
 
 (declaim (inline compiling? set-compile))
@@ -664,16 +660,6 @@
                       :nfa (string ',name)
                       ,@args))
 
-;; --------------------------------------------
-;; Adding VOCABULARY FORTH - first word in the dictionary
-
-(add-init
-  (let ((v  (make-instance '<vocabulary>
-                           :nfa "FORTH"
-                           :lfa nil)))
-    (setf *tic-forth*   v
-          (current-voc) v
-          (context-voc) v)))
 ;; ---------------------------------------------
 
 (defmacro code (name &body body)
@@ -792,16 +778,6 @@
   ;; binding
   (maps:find dynvar-tree (data-of self)))
 
-;; --------------------------------------------
-;; Adding DYNVAR BASE
-
-(add-init
-  (let ((v (link-derived-word '<dynvar>
-                              :nfa "BASE")))
-    (setf *tic-base*  v
-          dynvar-tree
-          (maps:add dynvar-tree (data-of v) (list 10.)))
-    ))
 ;; --------------------------------------------
 
 (defgeneric to-oper (dst x)

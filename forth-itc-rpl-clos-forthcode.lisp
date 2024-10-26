@@ -6,7 +6,27 @@
 
 ;; ------------------------------------------------------
 
-(initialize)  ;; now we have FORTH and BASE
+(initialize)
+
+;; --------------------------------------------
+;; Adding VOCABULARY FORTH - first word in the dictionary
+
+(let ((v  (make-instance '<vocabulary>
+                         :nfa "FORTH"
+                         :lfa nil)))
+  (setf *tic-forth*   v
+        (current-voc) v
+        (context-voc) v))
+
+;; --------------------------------------------
+;; Adding DYNVAR BASE
+
+(let ((v (link-derived-word '<dynvar>
+                            :nfa "BASE")))
+  (setf *tic-base*  v
+        dynvar-tree
+        (maps:add dynvar-tree (data-of v) (list 10.))
+        ))
 
 ;; --------------------------------------------
 
@@ -25,11 +45,6 @@
 
 (code compiling
   (sp-! *compiling*))
-
-#|
-(code base
-  (sp-! *base*))
-|#
 
 ;; --------------------------------------------
 
@@ -515,28 +530,38 @@
     (let* ((val  sp@+)
            (loc  sp@+))
       (setf (@fcell loc) val)) }
- 
 
  code .
    (with-users-base
     (princ sp@+)) }
 
+;; --------------------------------------------
+;; DynVars
 
+code (dynvar)
+   (let* ((var (derive-word '<dynvar>))
+          (val (list tos))
+          (key (data-of var)))
+     (setf dynvar-tree
+           (maps:add dynvar-tree key val))
+     (setf tos var)) }
+
+: dynvar   ( val -- )
+   (dynvar) define-word ;
+   
  ;; print- and read- base -------------------------------------------
 
- code !base
-    (!base sp@+) }
-    
-;;  : @base   ( -- n ) base @ ;
-;;  : !base   ( n -- ) base ! ;
+ : !base  => base ;
  : decimal #10r10 !base ;
  : hex     #10r16 !base ;
+ : octal   #10r8  !base ;
  : binary  #10r2  !base ;
  : print-with-radix ( v r -- )
       base swap !base swap . !base ;
  : .decimal #10r10 print-with-radix ;
  : .hex     #10r16 print-with-radix ;
  : .binary  #10r2  print-with-radix ;
+ : .ocatal  #10r8  print-with-radix ;
  decimal
 
  ;; constants -------------------------------------------------------
@@ -618,21 +643,6 @@
  : s:baba swap 2dup ;
  : s:bbaa swap 2dup rot ;
  
-;; --------------------------------------------
-;; DynVars
-
-code (dynvar)
-   (let* ((var (derive-word '<dynvar>))
-          (val (list tos))
-          (key (data-of var)))
-     (setf dynvar-tree
-           (maps:add dynvar-tree key val))
-     (setf tos var)) }
-
-: dynvar   ( val -- )
-   (dynvar) define-word ;
-   
-   
  ;; 1-D arrays -------------------------------------------------------
 
  code allot (setf tos (make-array tos)) }
@@ -794,7 +804,6 @@ code (dynvar)
  code nop }
 
  : compile-nop compile nop ;
-
 
   ;; if .. then
   ;; if .. else .. then
@@ -1137,10 +1146,6 @@ code (dyn-restore)
    then ; immediate
 
 ;; --------------------------------------------
-
-;;; : tst-dyn
-;;;     << base 16 >> dyn-bind
-;;;     .base ;
 
 0 variable tstvar
 
