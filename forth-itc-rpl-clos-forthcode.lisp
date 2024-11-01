@@ -9,7 +9,7 @@
 ;;
 ;; A Forth "Word" in the "Dictionary"
 ;; ----------------------------------
-                         
+#|                         
    ┌─  Generic Word   ─┐    
    │                   │    
    │  ┌─────────────┐  │    
@@ -28,7 +28,7 @@
    │  │     IFA     ├──┼───▶ ICode list, if any
    │  └─────────────┘  │    
    └───────────────────┘
-
+|#
 ;; All words have NFA, LFA, and the CFA behavior, slots.
 ;;
 ;; Some words may not have DFA or IFA slots. E.g., CODE and :-DEFS
@@ -48,7 +48,7 @@
 ;; the TOS value in the next ascending position of the vector.
 ;;
 ;; IFA exists only in higher level defs, like :-DEFS and ;:-DEFS.
-;; The ICode list is a Lisp list of other Forth Words like these.
+;; The ICode list is a Lisp list of Forth Words like these.
 ;;
 ;; System DEF Classes are provided for specific patterns of behavior:
 ;;
