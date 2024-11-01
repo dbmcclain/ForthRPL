@@ -71,12 +71,14 @@
 ;; -----------------------------------------------------
 
 (defclass <code-def> ()
-  ((verb-type :accessor verb-type :initarg :verb-type)
+  ((verb-type :accessor verb-type :initarg :verb-type
+              :allocation :class)
+   (has-data? :accessor has-data? :initarg :has-data?
+              :allocation :class)
    (cfa       :accessor fw-cfa    :initarg :cfa      )
    (nfa       :accessor fw-nfa    :initarg :nfa      )
    (lfa       :accessor fw-lfa    :initarg :lfa      )
-   (immed     :accessor is-immed  :initarg :immed    )
-   (has-data? :accessor has-data? :initarg :has-data?))
+   (immed     :accessor is-immed  :initarg :immed    ))
   (:default-initargs
    :verb-type "CODE"
    :cfa       'no-behavior
@@ -94,7 +96,11 @@
     (princ (name-of self) out-stream)))
 
 (defclass <scode-def> (<code-def>)
-  ((dfa       :accessor fw-dfa  :initarg :dfa))
+  ((verb-type :accessor verb-type :initarg :verb-type
+              :allocation :class)
+   (has-data? :accessor has-data? :initarg :has-data?
+              :allocation :class)
+   (dfa       :accessor fw-dfa  :initarg :dfa))
   (:default-initargs
    :verb-type ";CODE"
    :has-data? t
@@ -643,7 +649,12 @@
 ;; ---------------------------------------------
 
 (defclass <vocabulary> (<scode-def>)
-  ()
+  ((verb-type :accessor verb-type :initarg :verb-type
+              :allocation :class)
+   (has-data? :accessor has-data? :initarg :has-data?
+              :allocation :class)
+   (cfa       :accessor fw-cfa    :initarg :cfa
+              :allocation :class))
   (:default-initargs
    :verb-type "VOCABULARY"
    :has-data? nil
@@ -674,11 +685,18 @@
 ;; ---------------------------------------------
 
 (defclass <colon-def> (<code-def>)
-  ((ifa       :accessor fw-ifa  :initarg :ifa))
+  ((verb-type :accessor verb-type :initarg :verb-type
+              :allocation :class)
+   (has-data? :accessor has-data? :initarg :has-data?
+              :allocation :class)
+   (cfa       :accessor fw-cfa    :initarg :cfa
+              :allocation :class)
+   (ifa       :accessor fw-ifa  :initarg :ifa))
   (:default-initargs
    :verb-type ":"
    :cfa       'docol
    :ifa       nil
+   :has-data? nil
    ))
 
 (defmacro colon (name &rest iwords)
@@ -704,10 +722,16 @@
 ;; ---------------------------------------------
 
 (defclass <constant> (<scode-def>)
-  ()
+  ((verb-type :accessor verb-type :initarg :verb-type
+              :allocation :class)
+   (has-data? :accessor has-data? :initarg :has-data?
+              :allocation :class)
+   (cfa       :accessor fw-cfa    :initarg :cfa
+              :allocation :class))
   (:default-initargs
    :verb-type "CONSTANT"
    :cfa       'doval
+   :has-data? t
    ))
 
 (defmacro const (name cval)
@@ -718,9 +742,15 @@
                       ))
 
 (defclass <scolon-def> (<scode-def> <colon-def>)
-  ()
+  ((verb-type :accessor verb-type :initarg :verb-type
+              :allocation :class)
+   (has-data? :accessor has-data? :initarg :has-data?
+              :allocation :class)
+   (cfa       :accessor fw-cfa    :initarg :cfa
+              :allocation :class))
   (:default-initargs
    :verb-type ";:"
+   :has-data? t
    :cfa       'doscol))
 
 (defmethod do-jmp ((self <scolon-def>))
@@ -729,7 +759,12 @@
 ;; ---------------------------------------------
 
 (defclass <local-accessor> (<scode-def>)
-  ()
+  ((verb-type :accessor verb-type :initarg :verb-type
+              :allocation :class)
+   (has-data? :accessor has-data? :initarg :has-data?
+              :allocation :class)
+   (cfa       :accessor fw-cfa    :initarg :cfa
+              :allocation :class))
   (:default-initargs
    :verb-type "LOCAL"
    :has-data? nil
@@ -762,7 +797,12 @@
 ;; Dynvars
 
 (defclass <dynvar> (<scode-def>)
-  ()
+  ((verb-type :accessor verb-type :initarg :verb-type
+              :allocation :class)
+   (has-data? :accessor has-data? :initarg :has-data?
+              :allocation :class)
+   (cfa       :accessor fw-cfa    :initarg :cfa
+              :allocation :class))
   (:default-initargs
    :verb-type "DYNVAR"
    :has-data? nil
@@ -1364,7 +1404,9 @@
 (defvar *the-forth-kernel*
   (merge-pathnames
    #P"forth-itc-rpl-clos-forthcode.lisp" ;; should be companion file to this one...
-   #P"/Users/davidmcclain/projects/Lispworks/tools/Forth/forth-itc-rpl-clos-lispcode.lisp"))
+   #+:MAC #P"/Users/davidmcclain/projects/Lispworks/tools/Forth/forth-itc-rpl-clos-lispcode.lisp"
+   #+:WINDOWS #P"c:/Projects/Lispworks/tools/Forth/forth-itc-rpl-clos-lispcode.lisp"
+   ))
 
 (defun goforth ()
   (let ((*readtable* (copy-readtable)))

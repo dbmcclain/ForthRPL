@@ -1,9 +1,101 @@
-;; forth-itc-rpl-forthcode.lisp -- this file is intended to contain only Forth definitions
-;; Any Lisp code should be for constructive purposes only, not for definitional bindings
+;; forth-itc-rpl-forthcode.lisp - Forth System Bootstrap Code
+;;
+;; This file is intended to contain only Forth definitions. Any Lisp
+;; code should be for constructive purposes only, not for definitional
+;; bindings
 ;; ------------------------------------------------------------------
 (in-package #:forthrpl)
 ;; ------------------------------------------------------------------
+;;
+;; A Forth "Word" in the "Dictionary"
+;; ----------------------------------
+                         
+   ┌─  Generic Word   ─┐    
+   │                   │    
+   │  ┌─────────────┐  │    
+   │  │     NFA     ├──┼───▶ Name, string or symbol
+   │  └─────────────┘  │    
+   │  ┌─────────────┐  │    
+   │  │     LFA     ├──┼───▶ Link, points to prior word in dictionary
+   │  └─────────────┘  │    
+   │  ┌─────────────┐  │    
+   │  │     CFA     ├──┼───▶ Code, points to word's behavior (Lisp code)
+   │  └─────────────┘  │    
+   │  ┌─────────────┐  │    
+   │  │     DFA     ├──┼───▶ Data, contains assoc data, if any
+   │  └─────────────┘  │    
+   │  ┌─────────────┐  │    
+   │  │     IFA     ├──┼───▶ ICode list, if any
+   │  └─────────────┘  │    
+   └───────────────────┘
 
+;; All words have NFA, LFA, and the CFA behavior, slots.
+;;
+;; Some words may not have DFA or IFA slots. E.g., CODE and :-DEFS
+;; have no DFA. CODE, ;CODE, and CONSTANT have no IFA. ;:-DEFS have
+;; both DFA and IFA.
+;;
+;; Some of the CFA slots may exist as shared behavior in Class
+;; allocated slots, instead of per-Instance slots. E.g., CFA in the
+;; case of :-DEFS, CONSTANTS, and most others. CODE and ;CODE defs
+;; have custom CFA (per-Instance) behaviors.
+;;
+;; In the case of CONSTANT's the DFA contains the value.  For
+;; VARIABLES, the DFA points to a vector of Lisp values, with length
+;; at least one. ARRAYS would have longer vectors.
+;;
+;; The , (comma operation) grows the last def's data vector and plants
+;; the TOS value in the next ascending position of the vector.
+;;
+;; IFA exists only in higher level defs, like :-DEFS and ;:-DEFS.
+;; The ICode list is a Lisp list of other Forth Words like these.
+;;
+;; System DEF Classes are provided for specific patterns of behavior:
+;;
+;;  <CODE-DEF>       - used by CODE defs
+;;
+;;  <SCODE-DEF>      - used by ;CODE defs. On entry the WP register points
+;;                     to the word so that you can access its DFA value.
+;;
+;;  <VOCABULARY>     - used by VOCABULARY defs
+;;
+;;  <CONSTANT>       - used by all CONSTANT and VARIABLE defs
+;; 
+;;  <COLON-DEF>      - used by all high-level : defs
+;;
+;;  <SCOLON-DEF>     - used by ;: defining words
+;;
+;;  <LOCAL-ACCESSOR> - references to local lexical bindings
+;;
+;;  <DYNVAR>         - akin to Lisp Special Bindings (dynamic vars)
+;;
+;; All behaviors are executed with one parameter - a pointer to the
+;; Word itself, so that other associated slots may be accessed by the
+;; behavior code.
+;;
+;; ForthRPL does *not* use a linear memory layout. It makes use of
+;; Lisp's dynamically allocated, garbage collected, data structures.
+;;
+;; But within one VARIABLE or ARRAY DFA vector, we do have linear
+;; memory.  And within that data vector, memory is accessed by ordinal
+;; integer index.
+;;
+;; We have STACKS!
+;;
+;;   SP - parameter stack
+;;   RP - return stack
+;;   FP - frame stack,  for when we use local lexical bindings
+;;   UP - dynamic stack, used for special bindings, and unwind protect
+;;        frames
+;;
+;; Internally used registers:
+;;
+;;   IP - points to some NTHCDR of the currently executing ICode list
+;;   WP - points to the currently executing Word
+;;
+;; This interpreter executes a facsimile of ITC Forth, who's low-level
+;; machine code, reached within CODE and ;CODE defs, is Lisp.
+;;
 ;; ------------------------------------------------------
 
 (initialize)
@@ -947,8 +1039,7 @@ code .r
   (inspect rp) }
 
 code (>>r<<)
-    (rotatef rtos rnos)
-    ;; (rp-! sp@+)
+    (rotatef rtos rnos) ;; rswap
     (!ip sp@+) }
     
 : >>r<<   ( fn -- )
@@ -980,7 +1071,7 @@ code (pop-prot)
      
 : protect
     ;; Protect one word following the use of protect in the caller's code.
-    ;; All the rest of the code will be used as unwind code.
+    ;; All the rest of the caller's code will be used as unwind code.
     (protect)
     >r<
     (pop-prot) ;
@@ -997,9 +1088,9 @@ code (pop-prot)
 ;; O(Log2 N) lookup times.
 ;;
 ;; REBINDING takes a quotation whose list of i-codes should be
-;; dynvars. Each of them has its current binding copied and stacked
-;; for subsequent use, leaving prior bindings in place in the dynvar
-;; stack.
+;; dynvars. The current dyn-tree is duplicated on the UP stack, and
+;; each dynvar in the quotation has its binding copied. Any mutation
+;; to these will affect only the copy, not the original binding.
 ;;
 
 code (rebinding)
