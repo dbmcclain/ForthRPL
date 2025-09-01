@@ -214,15 +214,14 @@
 ;; In that way, we can add bindings to the base *dynvars* and they
 ;; will be retained on an unwind.
 ;;
-;; During REBIND we copy the tree root pointer in the top CONS cell of
-;; the *dynvars* list, wrap a new CONS cell around it, and push it
-;; onto the *dynvars* list. That way new trees constructed along the
-;; way with rebound dynvar values, will affect only the top CONS cell
-;; of the *dynvars* list,
+;; During REBIND we duplicate the tree root pointer at the head of the
+;; list in *dynvars*. That way new trees constructed along the way
+;; with rebound dynvar values, will affect only the top CONS cell of
+;; the *dynvars* list,
 ;;
 ;; At all times, the relevant tree root pointer is located at:
 ;;
-;;    (CAAR *dynvars*)
+;;    (CAR *dynvars*)
 ;;
 ;; and that is the location that should receive the new tree root
 ;; pointer after any tree modifications. (Got that?)
@@ -237,21 +236,10 @@
 ;; that CAS can operate on the CONS cell. The identity of the CONS
 ;; cell remains fixed, while the inner contained value can mutate.
 
-(defparameter *dynvars* (list (list (maps:empty))))
-
-(define-symbol-macro dynvar-tree   (caar *dynvars*))
-
-;; --------------------------------------------
-;; Setting up the initial DYNVARS tree
-
-(add-init
-  (setf *dynvars*  (list
-                    (list (maps:empty))
-                    ) ))
-;; --------------------------------------------
-
 ;; -----------------------------------------------------------
 ;; User Areas - one per machine thread
+
+(defparameter *tic-initial-dynvars*  (maps:empty))
 
 (defstruct user
   (context   (make-fcell *tic-forth*))
@@ -265,6 +253,8 @@
   (display   (list (make-frame)))
   tracing
   reader
+  (dynvars   (list *tic-initial-dynvars*))
+  catch-pt
   unwind-chain)
 
 (defparameter *user*  (make-user))
@@ -292,6 +282,10 @@
 (define-symbol-macro *next-word-reader* (user-reader       *user*))
 (define-symbol-macro *pad-stack*        (user-pad-stack    *user*))
 (define-symbol-macro *unwind-chain*     (user-unwind-chain *user*))
+(define-symbol-macro *dynvars*          (user-dynvars      *user*))
+(define-symbol-macro *catch-pt*         (user-catch-pt     *user*))
+
+(define-symbol-macro dynvar-tree        (car *dynvars*))
 
 ;; --------------------------------------------
 
@@ -481,32 +475,55 @@
 ;; Unwind-Protect support for Forth code
 
 (defstruct prot-frame
-  ip fp dp)
+  ip rp sp fp dp cp)
+
+(defstruct dynvar-sav
+  vars)
+
+(defstruct catch-sav
+  tag
+  prot)
 
 (defun forth-protect (ip)
   (up-! (make-prot-frame
          :ip   ip  ;; user's unwind ip
+         :rp   rp
+         :sp   sp
          :fp   fp
-         :dp   *dynvars*)
+         :dp   *dynvars*
+         :cp   *catch-pt*)
         ))
 
-(defun forth-unwind ()
+(defun restore-state (state)
+  ;; assumes state is PROT-FRAME
+  (with-accessors ((sav-ip   prot-frame-ip)
+                   (sav-rp   prot-frame-rp)
+                   (sav-sp   prot-frame-sp)
+                   (sav-fp   prot-frame-fp)
+                   (sav-dp   prot-frame-dp)
+                   (sav-cp   prot-frame-cp)) state
+    (setf *reg-i*    sav-ip
+          ;; *pstack*  sav-sp
+          *rstack*   sav-rp
+          *frstack*  sav-fp
+          *dynvars*  sav-dp
+          *catch-pt* sav-cp)
+    ))
+  
+(defun forth-unwind (&optional target-state)
   (nlet iter ()
     (when-let (state up@+)
       (cond ((prot-frame-p state)
-             (with-accessors ((sav-ip   prot-frame-ip)
-                              (sav-fp   prot-frame-fp)
-                              (sav-dp   prot-frame-dp)) state
-               (setf *reg-i*   sav-ip
-                     *rstack*  nil
-                     *frstack* sav-fp
-                     *dynvars* sav-dp)
-               (inner-interp ip@+)
-               (go-iter)
-               ))
-            (t
-             (go-iter))
-            ))))
+             (restore-state state)
+             (inner-interp ip@+))
+            ((dynvar-sav-p state)
+             (setf *dynvars* (dynvar-sav-vars state)))
+            ((catch-sav-p state)
+             (restore-state (catch-sav-prot state))
+             (setf *pstack* (prot-frame-sp (catch-sav-prot state)))) )
+      (unless (eq state target-state)
+        (go-iter))
+      )))
 
 (defparameter *dummy-prot*
   (list (make-instance '<code-def>
@@ -515,7 +532,48 @@
                               (declare (ignore self))
                               (!ip nil)))
         ))
-        
+
+(defun forth-catch ()
+  (let ((fn (pop rp@)))
+    (up-! (setf *catch-pt*
+                (make-catch-sav
+                 :tag   sp@+
+                 :prot  (make-prot-frame
+                         :ip  rp@
+                         :rp  rp
+                         :sp  sp
+                         :fp  fp
+                         :dp  *dynvars*
+                         :cp  *catch-pt*))
+                ))
+    (sp-! fn)))
+
+(defun forth-uncatch ()
+  (let ((csav  up@+))
+    (setf *catch-pt* (prot-frame-cp (catch-sav-prot csav)))
+    (sp-! nil)
+    ))
+
+(defun forth-throw ()
+  (let* ((tag  sp@+)
+         (ans  sp@+))
+    ;; We have to make this conditional on ANS, since the execution
+    ;; has unknown effect on the stack, while a (THROW NIL) would
+    ;; appear the same way to the code following the CATCH as a normal
+    ;; return, and there would be no way to know how to handle the
+    ;; stack in that follow code.
+    (when ans
+      (nlet iter ((pt  *catch-pt*))
+        (if pt
+            (if (eq tag (catch-sav-tag pt))
+                (progn
+                  (forth-unwind pt)
+                  (sp-! ans)
+                  (inner-interp ip@+))
+              (go-iter (prot-frame-cp (catch-sav-prot pt))))
+          (error "No tag ~S" tag))
+        ))))
+
 ;; --------------------------------------------
 
 (defun must-find (w)
@@ -806,7 +864,7 @@
   (:default-initargs
    :verb-type "DYNVAR"
    :has-data? nil
-   :dfa       (gensym)
+   :dfa       nil
    :cfa       'do-dynvar
    ))
 
@@ -816,11 +874,14 @@
 (defun lookup-dynvar (self)
   ;; return the list of bindings - the top one is the currently active
   ;; binding
-  (maps:find dynvar-tree (data-of self)))
+  (maps:find dynvar-tree (name-of self)))
 
 (defun add-dynvar (var val)
   (setf dynvar-tree
-        (maps:add dynvar-tree (data-of var) (list val))))
+        (maps:add dynvar-tree (name-of var) (list val))))
+
+(defun save-dynvars ()
+  (setf *tic-initial-dynvars* dynvar-tree))
 
 ;; --------------------------------------------
 
@@ -836,8 +897,7 @@
      (setf (aref (nth lvl *frstack*) pos) x)
      ))
   (:method ((dst <dynvar>) x)
-   (let ((val (lookup-dynvar dst)))
-     (setf (car val) x)))
+   (add-dynvar dst x))
   (:method (dst x)
    (not-a-var dst)))
 

@@ -97,6 +97,15 @@
 ;; machine code, reached within CODE and ;CODE defs, is Lisp.
 ;;
 ;; ------------------------------------------------------
+;;
+;; System State
+;;
+;;   - IP
+;;   - WP
+;;   - RP
+;;   - SP
+;;   - FP
+;;   - UP
 
 (initialize)
 
@@ -116,7 +125,8 @@
 (let ((v (link-derived-word '<dynvar>
                             :nfa "BASE")))
   (setf *tic-base*  v)
-  (add-dynvar v 10.))
+  (add-dynvar v 10.)
+  (save-dynvars))
 
 ;; --------------------------------------------
 
@@ -334,7 +344,6 @@
 ;; ---------------------------------------------------------
 ;; ... the rest directly in Forth...
 ;; ---------------------------------------------------------
-;;  { #\newline word drop }  define-word ;; immediate  ;; we now have comments to end of line...
 
 (interpret #1>.end
  { bl-word def } 'define-word def
@@ -406,7 +415,7 @@
  ;;           called with one parameter - the <CODE> structure representing the
  ;;           Forth code object, called SELF.
  ;;
- ;;   LISP{   performs an immediate call to compiled Lisp code an has no
+ ;;   LISP{   performs an immediate call to compiled Lisp code and has no
  ;;           ostensible effects on the stack (unless the code itself does).
  ;;           The code is not called with any parameters.
  
@@ -415,6 +424,9 @@
     (funcall (compile nil `(lambda () ,e)))) }
 
  : lisp{ }-word lisp ;
+ : l{  lisp{ ;
+
+;;  lisp{ (inspect *dynvars*) }
 
  ;; various stack manipulation verbs -----------------------------------
 
@@ -434,6 +446,7 @@
       (sp-! rtos) }
 
  code j
+      ;; refers to the caller's "i", just above the return addr, which itself is above our "i".
       (sp-! (third rp)) }
 
 ;; --------------------------------------------
@@ -546,7 +559,7 @@
     ;; might not be safe to nreverse that original list
     (!sp (cons (length seq) (nconc (reverse lst) sp)))) }
 
- code copy-vec
+ code copy-seq
    (setf tos (copy-seq tos)) }
 
  code 1vec
@@ -560,21 +573,25 @@
 ;; --------------------------------------------
 ;; Easy construction of Vectors
 ;;
-;; For #(a b c) enter: << a b c >>
+;; For (list a b c) enter: << a b c >>lst
+;; For (vector a b c) enter: << a b c >>vec
 ;; Same as:  a b c 3 ->vec
  
  : <<  '<< ;
 
- code >>
+ code >>lst
    (let ((pos (position '<< sp)))
      (unless pos
        (report-error " Missing '<< stack mark"))
      (multiple-value-bind (hd tl)
          (um:split pos sp)
-       (let ((vec  (coerce (nreverse hd) 'vector)))
+       (let ((lst (nreverse hd)))
          (setf  sp  tl
-                tos vec))
+                tos lst))
        )) }
+   
+ : >>vec
+     >>lst  code{ (setf tos (coerce tos 'vector)) } ;
    
 ;; --------------------------------------------
 
@@ -629,12 +646,12 @@
 ;; DynVars
 
 code (dynvar)
-   (let* ((var (derive-word '<dynvar>)))
-     (add-dynvar var tos)
-     (setf tos var)) }
+   (let* ((var (link-derived-word '<dynvar>
+                                  :nfa sp@+)))
+     (add-dynvar var sp@+)) }
 
 : dynvar   ( val -- )
-   (dynvar) define-word ;
+   bl word (dynvar) ;
    
  ;; print- and read- base -------------------------------------------
 
@@ -647,8 +664,9 @@ code (dynvar)
       base swap !base swap . !base ;
  : .decimal #10r10 print-with-radix ;
  : .hex     #10r16 print-with-radix ;
+ : .octal   #10r8  print-with-radix ;
  : .binary  #10r2  print-with-radix ;
- : .ocatal  #10r8  print-with-radix ;
+
  decimal
 
  ;; constants -------------------------------------------------------
@@ -968,7 +986,8 @@ code (dynvar)
        pop        ;; x x [cdr a] [car a]
        dup        ;; x x [cdr a] [car a] [car a]
     while
-       s:bac execute  ;; x [cdr a] t/f
+       s:bac      ;; x [cdr a] x [car a]
+       execute    ;; x [cdr a] t/f
        if
           swap-drop      ;; [cdr a]
           pop  swap      ;; [car [cdr a]] [cdr [cdr a]]
@@ -1013,7 +1032,7 @@ code (dynvar)
 ;; --------------------------------------------
 ;; Special Return Stack Ops
 
-code rp)+
+code rtos)+
    ;; when performed in a colon-def, assuming that def was called by
    ;; another colon-def, this fetches the next ip-code op from caller,
    ;; and advances the return address.
@@ -1067,7 +1086,9 @@ code (protect)
     (forth-protect (cdr rp@)) }
 
 code (pop-prot)
-     up@+) }
+   (let ((state up@+))
+     (assert (prot-frame-p state))
+     (restore-state state)) }
      
 : protect
     ;; Protect one word following the use of protect in the caller's code.
@@ -1075,7 +1096,6 @@ code (pop-prot)
     (protect)
     >r<
     (pop-prot) ;
-
     
 ;; --------------------------------------------
 ;; Rebinding Dynvars - Closer to real dynamic binding.
@@ -1094,8 +1114,9 @@ code (pop-prot)
 ;;
 
 code (rebinding)
-     (up-! *dynvars*)                        ;; save current bindings for restore
-     (push (list dynvar-tree) *dynvars*)     ;; copy bindings into new context
+     (up-! (make-dynvar-sav
+            :vars *dynvars*))                 ;; save current bindings for restore
+     (push dynvar-tree *dynvars*)             ;; copy bindings into new context
      (nlet iter ((lst  (icode-of (pop rp@)))) ;; get list of vars
        (when lst
          (let ((var (car lst)))
@@ -1107,7 +1128,9 @@ code (rebinding)
          )) }
 
 code (pop-rebindings)
-     (setf *dynvars* up@+) }
+  (let ((sav up@+))
+    (assert (dynvar-sav-p sav))
+    (setf *dynvars* (dynvar-sav-vars sav))) }
 
 : rebinding
     (rebinding)
@@ -1137,7 +1160,7 @@ code .u
 0 dynvar x  0 dynvar y  0 dynvar z
 
 : .vars
-    << x y z >> . ;
+    << x y z >>vec . ;
     
 : tst-reb
    rebinding { x y z }
@@ -1178,7 +1201,7 @@ code (dyn-restore)
          (go-iter rest))
        )) }
    
-: dyn-bind ( vars-vals n -- sav )
+: dyn-bind ( vec -- sav )
     (dyn-bind) r>
     protect
     >>r<<
@@ -1197,7 +1220,7 @@ code (dyn-restore)
  : "  #\" word
      compiling @ if compile literal , then ; immediate -- " for confused Editor
 
- : ?compile compiling @ if rp)+ , then ;
+ : ?compile compiling @ if rtos)+ , then ;
 
  : ."     [compile] " ?compile . ; immediate
 
@@ -1214,7 +1237,7 @@ code (dyn-restore)
             { #10r10 =  } { ." Decimal" }
             { #10r8  =  } { ." Octal"   }
             { #10r2  =  } { ." Binary"  }
-            { otherwise } { >base< decimal base . }
+            otherwise     { base >base< decimal . }
        esac ;
 
 : verify-stack-empty
@@ -1234,7 +1257,7 @@ code (dyn-restore)
 0 variable tstvar
 
 : tst-unw
-    << tstvar 511. >> dyn-bind
+    << tstvar 511. >>vec dyn-bind
    base tstvar 2 ->lst . cr
    if error" Wjat!!" then ;
 
@@ -1257,19 +1280,18 @@ code (dyn-restore)
           { "error\"" string= } { skip-quote    }
       esac ;
 
-
  { begin bl-word dup
      case { "|#" string= } { drop r> r> 2drop }  ;; " dummy for Editor
-          { otherwise    } { dup skipper      }
-      esac
-      drop
+          otherwise        { dup skipper      }
+     esac
+     drop
    again }
 ' #| patch         ;; |#
 
 
  { begin bl-word dup
      case { "FI#" string= } { drop r> r> 2drop }
-          { otherwise     } { dup skipper      }
+          otherwise         { dup skipper      }
      esac
      drop
    again }
@@ -1304,8 +1326,8 @@ code (dyn-restore)
     fp@+ }
 
  : (call-with-frame)
-      rp)+ ->vec
-      <env rp)+ execute env> ;
+      rtos)+ ->vec
+      <env rtos)+ execute env> ;
 
  code create-locals-frame
     (setf (frame-locals (car *display*)) sp@+) }
@@ -1329,7 +1351,7 @@ code :->;:  ;; ( pend-: nlocals -- pend-;: )
  : (exec-with-frame)   ( lcl1 lcl2 ... nlocals -- )
      ->vec <env >r< env> ;
      
- : ->|    "|" collect-words ;; " for dumb Editor
+ : ->|    "|" collect-words                              ;; " for dumb Editor
           dup <r ->vec create-locals-frame r> :->;:
           compile (exec-with-frame) ; immediate
 
@@ -1358,7 +1380,7 @@ code :->;:  ;; ( pend-: nlocals -- pend-;: )
                r> !env ;
 
  : (closure)
-    rp)+ @env ?dup-if make-closure then ;
+    rtos)+ @env ?dup-if make-closure then ;
 
   code toplevel?
     (sp-! (toplevel?)) }
@@ -1880,8 +1902,10 @@ FI#
 ;; --------------------------------------------
 ;; Actors
 
-code send
-  (ac:send* (coerce sp@+ 'list)) }
+code send ;; ( msg-vec targ -- )
+  (let* ((targ sp@+)
+         (msg  sp@+))
+    (ac:send* targ msg)) }
 
 code println
   (sp-! ac:println) }
@@ -1889,7 +1913,7 @@ code println
 code writeln
   (sp-! ac:writeln) }
 
-<< println " Hello from ForthRPL!!" >> send
+<< " Hello from ForthRPL!!" >>lst println send
 
 ;; --------------------------------------------
 
@@ -1899,13 +1923,30 @@ code trace+
 code trace-
    (trace-) }
 
+;; --------------------------------------------
+
+: catch ( tag -- nil )
+    code{ (forth-catch) }
+    execute
+    code{ (forth-uncatch) } ;
+    
+code ?throw  ;; ( ans tag -- )
+   ;; throws to catch tag if ans non-null
+   (forth-throw) }
+
+;; --------------------------------------------
+
+code save-dynvars
+  (save-dynvars) }
+
+save-dynvars
 remember overlay
 gild
 
  ;; parting wishes... -----------------------------------------------
  
- .s ;; should report "<- Top" if we are clean
- 10 spaces ." !! Should just show:<-Top !!"
+ .s ;; should report ".<- Top" if we are clean
+ 10 spaces ." !! Should just show: <-Top !!"
 verify-stack-empty
  
 ;; ------------------------------------------------------------
