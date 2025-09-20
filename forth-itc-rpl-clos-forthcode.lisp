@@ -446,8 +446,9 @@
       (sp-! rtos) }
 
  code j
-      ;; refers to the caller's "i", just above the return addr, which itself is above our "i".
-      (sp-! (third rp)) }
+      ;; refers to the caller's "i", just above the return addr, which
+      ;; itself is above our "i" and limit.
+      (sp-! (fourth rp)) }
 
 ;; --------------------------------------------
 ;; Stack twiddling
@@ -592,7 +593,9 @@
    
  : >>vec
      >>lst  code{ (setf tos (coerce tos 'vector)) } ;
-   
+
+ : >>  >>lst ;
+ 
 ;; --------------------------------------------
 
  code string=
@@ -924,7 +927,21 @@ code (dynvar)
  : until      [compile] ifnot swap ; immediate
  : repeat     [compile] end [compile] then ; immediate
  : ?dup-while [compile] ?dup-if swap ; immediate
+
+ ;; recursion --------------------------------------------------
  
+ code cur-word
+   (sp-!  %cur-def%) }
+ 
+ : recurse  cur-word , ; immediate
+
+ : fact     dup 0= if drop 1 else dup 1- recurse * then ;
+
+ code tail
+   (setf ip (icode-of ip@)) }
+
+ : tfact    1 swap { dup 0= if drop else swap over * swap 1- tail recurse then } ;
+   
  ;; do-loops ----------------------------------------------------
 
  code (do)
@@ -977,6 +994,9 @@ code (dynvar)
  : loop   compile (loop) , [compile] then ; immediate
  : +loop  compile (+loop) , [compile] then ; immediate
 
+ code leave
+   (setf rnos rtos) }
+   
  ;; CASE Statement -----------------------------------------------------
 
  : (case)
@@ -1071,12 +1091,15 @@ code (>>r<<)
     ;; Same as: r> r> swap <r <r <r
     (>>r<<) ;
 
+    ;; "r> call" does the same thing as >r<
+: call   <r ;
+
 ;; --------------------------------------------
 
 : >base<
      ;; Save base, perform caller's code, restore base on its exit.
      base <<r
-     >r<
+     r> call ;; >r<
      r> !base ;
 
 ;; --------------------------------------------
@@ -1094,7 +1117,7 @@ code (pop-prot)
     ;; Protect one word following the use of protect in the caller's code.
     ;; All the rest of the caller's code will be used as unwind code.
     (protect)
-    >r<
+    r> call ;; >r<
     (pop-prot) ;
     
 ;; --------------------------------------------
@@ -1114,27 +1137,18 @@ code (pop-prot)
 ;;
 
 code (rebinding)
-     (up-! (make-dynvar-sav
-            :vars *dynvars*))                 ;; save current bindings for restore
-     (push dynvar-tree *dynvars*)             ;; copy bindings into new context
-     (nlet iter ((lst  (icode-of (pop rp@)))) ;; get list of vars
-       (when lst
-         (let ((var (car lst)))
-           (when (typep var '<dynvar>)
-             (let ((val  (lookup-dynvar var)))
-               (add-dynvar var (car val))
-               )))
-         (go-iter (cdr lst))
-         )) }
+  (up-! (make-dynvar-sav                     ;; save current bindings for restore
+         :vars *dynvars*))
+  (push dynvar-tree *dynvars*) }             ;; copy bindings into new context
 
 code (pop-rebindings)
   (let ((sav up@+))
     (assert (dynvar-sav-p sav))
     (setf *dynvars* (dynvar-sav-vars sav))) }
 
-: rebinding
+: with-new-dynvars
     (rebinding)
-    >r<
+    r> call ;; >r<
     (pop-rebindings) ;
 
 ;; --------------------------------------------
@@ -1163,10 +1177,11 @@ code .u
     << x y z >>vec . ;
     
 : tst-reb
-   rebinding { x y z }
+   with-new-dynvars
+   .vars cr
    .u
     5 => x
-   15 => y
+   13 => y
    32 => z
    .vars ;
    
@@ -1177,34 +1192,31 @@ code (dyn-bind)
   ;; construct a dyn-restore list, exchange with RTOS to place
   ;; the restore struct on the r-stack, and the return addr on the p-stack.
   ;; Will be used by the following [ PROTECT >>R<< ].
-  (let* ((vec  sp@+)
-         (nel  (length vec)))
-    (nlet iter ((ct   0)
-                (acc  nil))
-      (if (>= ct nel)
-          (up-! acc)
-        (let ((var  (aref vec ct))
-              (val  (aref vec (1+ ct))))
-          (go-iter (+ ct 2)
-                   (list* var
-                          (shiftf (@fcell var) val)
-                          acc)))
-        ))) }
+  (nlet iter ((lst  sp@+)
+              (acc  nil))
+    (if (endp lst)
+        (up-! (make-dynbind-sav :lst acc))
+      (destructuring-bind (var val . rest) lst
+        (go-iter rest
+                 (list* var
+                        (shiftf (@fcell var) val)
+                        acc)))
+      )) }
 
 code (dyn-restore)
    ;; Expect a dyn-restore list on top of R-stack.
    ;; Restore the vars in the list, popping the r-stack.
-   (nlet iter ((lst up@+))
-     (when lst
-       (destructuring-bind (var val . rest) lst
-         (setf (@fcell var) val)
-         (go-iter rest))
-       )) }
+   (restore-dynbinds up@+) }
    
-: dyn-bind ( vec -- sav )
-    (dyn-bind) r>
-    protect
-    >>r<<
+;;; : dyn-bind ( vec -- sav )
+;;;     (dyn-bind) r>
+;;;     protect
+;;;     >>r<<
+;;;     (dyn-restore) ;
+
+: dyn-bind ( lst -- sav )
+    (dyn-bind)
+    r> call ;; >r<
     (dyn-restore) ;
 
 ;; --------------------------------------------------------------
@@ -1217,17 +1229,17 @@ code (dyn-restore)
           (ccode sp@+))
      (setf (beh-of wd) (beh-of ccode))) }
 
- : "  #\" word
+ : s"  #\" word
      compiling @ if compile literal , then ; immediate -- " for confused Editor
 
  : ?compile compiling @ if rtos)+ , then ;
 
- : ."     [compile] " ?compile . ; immediate
+ : ."     [compile] s" ?compile . ; immediate
 
  code error
      (report-error sp@+) }
 
- : error" [compile] " ?compile error ; immediate
+ : error" [compile] s" ?compile error ; immediate
 
 ;; --------------------------------------------
 
@@ -1257,7 +1269,7 @@ code (dyn-restore)
 0 variable tstvar
 
 : tst-unw
-    << tstvar 511. >>vec dyn-bind
+    << tstvar 511. >> dyn-bind
    base tstvar 2 ->lst . cr
    if error" Wjat!!" then ;
 
@@ -1325,18 +1337,20 @@ code (dyn-restore)
  code env>
     fp@+ }
 
+ code create-locals-frame
+    (setf (frame-locals (car *display*)) sp@+) }
+         
+;; --------------------------------------------
+#|
  : (call-with-frame)
       rtos)+ ->vec
       <env rtos)+ execute env> ;
 
- code create-locals-frame
-    (setf (frame-locals (car *display*)) sp@+) }
-         
  : ->    "{" collect-words
          compile (call-with-frame) dup ,
          ->vec [compile] { swap create-locals-frame
          ; immediate
-
+|#
 ;; --------------------------------------------
 ;; possibly cleaner way to do things...
 
@@ -1349,16 +1363,19 @@ code :->;:  ;; ( pend-: nlocals -- pend-;: )
                    )) }
 
  : (exec-with-frame)   ( lcl1 lcl2 ... nlocals -- )
-     ->vec <env >r< env> ;
+     ->vec <env r> call env> ;
      
- : ->|    "|" collect-words                              ;; " for dumb Editor
+ : (->|)  "|" collect-words                              ;; " for dumb Editor
           dup <r ->vec create-locals-frame r> :->;:
-          compile (exec-with-frame) ; immediate
+          compile (exec-with-frame) ;
+
+ : {|   [compile] { (->|) ; immediate
 
 ;; --------------------------------------------
-  ( -> to be used as:
+  ( {| to be used as:
 
-       { -> a b c { a b + . c a / } }
+       {| a b c |
+         a b + . c a / }
 
     Within the inner block, the named locals act like constants.
     The stack is trimmed by the number of locals appearing after the ->.
@@ -1384,9 +1401,15 @@ code :->;:  ;; ( pend-: nlocals -- pend-;: )
 
   code toplevel?
     (sp-! (toplevel?)) }
+
+  : closure?
+      toplevel? ifnot compile (closure) then ;
     
  : '{  
-    toplevel? ifnot compile (closure) then [compile] { ; immediate
+    closure? [compile] { ; immediate
+
+ : '{|
+    closure? [compile] {| ; immediate
 
  : }}  [compile] }  [compile] } ; immediate
  : }}} [compile] }} [compile] } ; immediate
@@ -1394,23 +1417,21 @@ code :->;:  ;; ( pend-: nlocals -- pend-;: )
 ;; --------------------------------------------
 ;; Example of a closure in action:
 
-  { -> ct { '{ ct dup 1+ => ct }}} constant ctr-maker
-  0 ctr-maker execute constant my-ctr
-  : next-ct  my-ctr execute ;
-
-  { ->| ct |
+  {| ct |
      '{ ct dup 1+ => ct }} constant new-ctr-maker
   0 new-ctr-maker execute constant new-ctr
   : next-new-ct  new-ctr execute ;
-  
+
+: ctr  { 0 1vec ;: dup @ 1 rot +! } define-word ;
+  ctr my-ctr
+
 ;; --------------------------------------------
    ( To construct a parameterized closure, you must first enclose 
      the '{ ... } within outer braces, e.g., 
 
-            { -> a { '{ a + } } }
+            {| a | '{ a + } } }
 
-     The arrow -> looks for an opening { to terminate the list of local vars.
-     The inner closured gets pushed on the stack and can be executed.
+     The inner closure gets pushed on the stack and can be executed.
 
      Otherwise, a non-parameterized function literal, at either top level
      of within a colon def:
@@ -1422,7 +1443,6 @@ code :->;:  ;; ( pend-: nlocals -- pend-;: )
     -- used by some compiling words that construct functions
     -- sometimes we need them to execute at toplevel
     toplevel? if execute then ;
-
 
 ;; --------------------------------------------
 
@@ -1879,6 +1899,11 @@ code pad>>
     
 ;; --------------------------------------------
 
+code interpret
+  (interpret sp@+) }
+
+;; --------------------------------------------
+  
 ':LISPWORKS feature? #+IF
 
 code cwd
@@ -1892,8 +1917,10 @@ code cd
          (eval `(hcl:cd ,path))
        (hcl:cd))) }
 
-code ls
-  (sys:call-system-showing-output "ls -lF") }
+code system
+  (sys:call-system-showing-output sp@+) }
+
+: ls  s" ls -lF" system ;
    
 code load 
       (interpret (hcl:file-string sp@+)) }
@@ -1902,7 +1929,7 @@ FI#
 ;; --------------------------------------------
 ;; Actors
 
-code send ;; ( msg-vec targ -- )
+code send ;; ( msg-lst targ -- )
   (let* ((targ sp@+)
          (msg  sp@+))
     (ac:send* targ msg)) }
@@ -1913,7 +1940,7 @@ code println
 code writeln
   (sp-! ac:writeln) }
 
-<< " Hello from ForthRPL!!" >>lst println send
+<< s" Hello from ForthRPL!!" >>lst println send
 
 ;; --------------------------------------------
 

@@ -348,7 +348,7 @@
 ;; --------------------------------------------
 
 (defun get-base ()
-  (car (lookup-dynvar *tic-base*)))
+  (lookup-dynvar *tic-base*))
 
 (define-symbol-macro @base  (get-base))
 
@@ -484,6 +484,9 @@
   tag
   prot)
 
+(defstruct dynbind-sav
+  lst)
+
 (defun forth-protect (ip)
   (up-! (make-prot-frame
          :ip   ip  ;; user's unwind ip
@@ -509,7 +512,15 @@
           *dynvars*  sav-dp
           *catch-pt* sav-cp)
     ))
-  
+
+(defun restore-dynbinds (state)
+  (nlet iter ((lst  (dynbind-sav-lst state)))
+    (when lst
+      (destructuring-bind (var val . rest) lst
+        (setf (@fcell var) val)
+        (go-iter rest))
+      )))
+
 (defun forth-unwind (&optional target-state)
   (nlet iter ()
     (when-let (state up@+)
@@ -518,6 +529,8 @@
              (inner-interp ip@+))
             ((dynvar-sav-p state)
              (setf *dynvars* (dynvar-sav-vars state)))
+            ((dynbind-sav-p state)
+             (restore-dynbinds state))
             ((catch-sav-p state)
              (restore-state (catch-sav-prot state))
              (setf *pstack* (prot-frame-sp (catch-sav-prot state)))) )
@@ -869,7 +882,7 @@
    ))
 
 (defun do-dynvar (self)
-  (sp-! (car (lookup-dynvar self))))
+  (sp-! (lookup-dynvar self)))
 
 (defun lookup-dynvar (self)
   ;; return the list of bindings - the top one is the currently active
@@ -878,7 +891,7 @@
 
 (defun add-dynvar (var val)
   (setf dynvar-tree
-        (maps:add dynvar-tree (name-of var) (list val))))
+        (maps:add dynvar-tree (name-of var) val)))
 
 (defun save-dynvars ()
   (setf *tic-initial-dynvars* dynvar-tree))
@@ -1077,9 +1090,14 @@
 
 #+:LISPWORKS
 (defun whitespace-char-p (c)
+  (lw:whitespace-char-p c))
+
+#|
+(defun whitespace-char-p (c)
   (member c '(#\Tab #\Newline #\VT #\Page #\Return #\Space
                     #\Zero-Width-Space #\Line-Separator
                     #\Paragraph-Separator #\Ideographic-Space) ))
+|#
 
 #-:LISPWORKS
 (defun whitespace-char-p (c)
@@ -1099,7 +1117,7 @@
             (let ((end (position-if #'whitespace-char-p buf
                                     :start (1+ pos))))
               (values (subseq buf pos end)
-                      end))
+                      (and end (1+ end))))
           ;; else
           (go-iter)))
     )))
