@@ -345,7 +345,7 @@
 ;; ... the rest directly in Forth...
 ;; ---------------------------------------------------------
 
-(interpret #1>.end
+(interpret #>.end
  { bl-word def } 'define-word def
  { skip-to-eol }          define-word ;; immediate  ;; we now have comments to end of line...
  { #\) word drop }        define-word ( immediate   ( we now have embedded comments )
@@ -1339,7 +1339,24 @@ code (dyn-restore)
 
  code create-locals-frame
     (setf (frame-locals (car *display*)) sp@+) }
-         
+
+;; local vars [2] -----------------------------------------------
+
+: continuation   <r ;
+: local          r> swap dup <r @ <r continuation r> r> ! ;
+#|
+Example:
+
+   0 variable a
+   0 variable b
+   
+   : tst   ( a b -- )
+       a local b local
+       b ! a !
+       ( do something with a, b)
+       ;
+       
+|#
 ;; --------------------------------------------
 #|
  : (call-with-frame)
