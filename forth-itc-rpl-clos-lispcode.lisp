@@ -71,10 +71,8 @@
 ;; -----------------------------------------------------
 
 (defclass <code-def> ()
-  ((verb-type :accessor verb-type :initarg :verb-type
-              :allocation :class)
-   (has-data? :accessor has-data? :initarg :has-data?
-              :allocation :class)
+  ((verb-type :accessor verb-type :initarg :verb-type)
+   (has-data? :accessor has-data? :initarg :has-data?)
    (cfa       :accessor fw-cfa    :initarg :cfa      )
    (nfa       :accessor fw-nfa    :initarg :nfa      )
    (lfa       :accessor fw-lfa    :initarg :lfa      )
@@ -96,10 +94,8 @@
     (princ (name-of self) out-stream)))
 
 (defclass <scode-def> (<code-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type
-              :allocation :class)
-   (has-data? :accessor has-data? :initarg :has-data?
-              :allocation :class)
+  ((verb-type :accessor verb-type :initarg :verb-type)
+   (has-data? :accessor has-data? :initarg :has-data?)
    (dfa       :accessor fw-dfa  :initarg :dfa))
   (:default-initargs
    :verb-type ";CODE"
@@ -265,7 +261,7 @@
 ;; --------------------------------------------
 
 (defmacro with-forth (&body body)
-  `(let ((*user*    (make-user))
+  `(let ((*user*    (copy-user *user*))
          (*reg-i*   nil)
          (*pstack*  nil)
          (*rstack*  nil)
@@ -720,12 +716,9 @@
 ;; ---------------------------------------------
 
 (defclass <vocabulary> (<scode-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type
-              :allocation :class)
-   (has-data? :accessor has-data? :initarg :has-data?
-              :allocation :class)
-   (cfa       :accessor fw-cfa    :initarg :cfa
-              :allocation :class))
+  ((verb-type :accessor verb-type :initarg :verb-type)
+   (has-data? :accessor has-data? :initarg :has-data?)
+   (cfa       :accessor fw-cfa    :initarg :cfa))
   (:default-initargs
    :verb-type "VOCABULARY"
    :has-data? nil
@@ -756,12 +749,9 @@
 ;; ---------------------------------------------
 
 (defclass <colon-def> (<code-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type
-              :allocation :class)
-   (has-data? :accessor has-data? :initarg :has-data?
-              :allocation :class)
-   (cfa       :accessor fw-cfa    :initarg :cfa
-              :allocation :class)
+  ((verb-type :accessor verb-type :initarg :verb-type)
+   (has-data? :accessor has-data? :initarg :has-data?)
+   (cfa       :accessor fw-cfa    :initarg :cfa)
    (ifa       :accessor fw-ifa  :initarg :ifa))
   (:default-initargs
    :verb-type ":"
@@ -793,12 +783,9 @@
 ;; ---------------------------------------------
 
 (defclass <constant> (<scode-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type
-              :allocation :class)
-   (has-data? :accessor has-data? :initarg :has-data?
-              :allocation :class)
-   (cfa       :accessor fw-cfa    :initarg :cfa
-              :allocation :class))
+  ((verb-type :accessor verb-type :initarg :verb-type)
+   (has-data? :accessor has-data? :initarg :has-data?)
+   (cfa       :accessor fw-cfa    :initarg :cfa))
   (:default-initargs
    :verb-type "CONSTANT"
    :cfa       'doval
@@ -813,12 +800,9 @@
                       ))
 
 (defclass <scolon-def> (<scode-def> <colon-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type
-              :allocation :class)
-   (has-data? :accessor has-data? :initarg :has-data?
-              :allocation :class)
-   (cfa       :accessor fw-cfa    :initarg :cfa
-              :allocation :class))
+  ((verb-type :accessor verb-type :initarg :verb-type)
+   (has-data? :accessor has-data? :initarg :has-data?)
+   (cfa       :accessor fw-cfa    :initarg :cfa))
   (:default-initargs
    :verb-type ";:"
    :has-data? t
@@ -830,12 +814,9 @@
 ;; ---------------------------------------------
 
 (defclass <local-accessor> (<scode-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type
-              :allocation :class)
-   (has-data? :accessor has-data? :initarg :has-data?
-              :allocation :class)
-   (cfa       :accessor fw-cfa    :initarg :cfa
-              :allocation :class))
+  ((verb-type :accessor verb-type :initarg :verb-type)
+   (has-data? :accessor has-data? :initarg :has-data?)
+   (cfa       :accessor fw-cfa    :initarg :cfa))
   (:default-initargs
    :verb-type "LOCAL"
    :has-data? nil
@@ -868,12 +849,9 @@
 ;; Dynvars
 
 (defclass <dynvar> (<scode-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type
-              :allocation :class)
-   (has-data? :accessor has-data? :initarg :has-data?
-              :allocation :class)
-   (cfa       :accessor fw-cfa    :initarg :cfa
-              :allocation :class))
+  ((verb-type :accessor verb-type :initarg :verb-type)
+   (has-data? :accessor has-data? :initarg :has-data?)
+   (cfa       :accessor fw-cfa    :initarg :cfa))
   (:default-initargs
    :verb-type "DYNVAR"
    :has-data? nil
@@ -1482,8 +1460,9 @@
 (defvar *the-forth-kernel*
   (merge-pathnames
    #P"forth-itc-rpl-clos-forthcode.lisp" ;; should be companion file to this one...
-   #+:MAC #P"/Users/davidmcclain/projects/Lispworks/tools/Forth/forth-itc-rpl-clos-lispcode.lisp"
-   #+:WINDOWS #P"c:/Projects/Lispworks/tools/Forth/forth-itc-rpl-clos-lispcode.lisp"
+   (translate-logical-pathname "PROJECTS:LISP;TOOLS;FORTH;")
+   ;; #+:MAC #P"/Users/davidmcclain/projects/Lispworks/tools/Forth/forth-itc-rpl-clos-lispcode.lisp"
+   ;; #+:WINDOWS #P"c:/Projects/Lispworks/tools/Forth/forth-itc-rpl-clos-lispcode.lisp"
    ))
 
 (defun goforth ()
@@ -1491,4 +1470,35 @@
     (set-macro-character #\] nil)
     (set-macro-character #\} nil)
     (load *the-forth-kernel*)))
-(goforth)
+
+;; ----------------------------------------------------------
+
+#+:LISPWORKS
+(defun file-string (fname)
+  (hcl:file-string fname))
+
+#-:LISPWORKS
+(defun file-string (fname)
+  (with-open-file (f fname
+                   :direction :input
+                   :element-type 'character)
+    (let ((ans (make-string (file-length f)
+                            :element-type 'character)))
+      (read-sequence ans f)
+      (string-right-trim '(#\Null) ans)
+      )))
+
+(defun src-file (fname)
+  (merge-pathnames
+   fname
+   (translate-logical-pathname
+    "PROJECTS:LISP;TOOLS;FORTH;4TH-SRC;")))
+
+(defun inhale (fname)
+  (interpret (file-string (src-file fname))))
+
+;; --------------------------------------------
+
+(defun doit ()
+  (goforth)
+  (interactive))

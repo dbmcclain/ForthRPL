@@ -102,6 +102,7 @@
   ;;
   ;; Crescendo compression curves
   ;;
+
   structure-template gfit-struct
     ffield fit-range
     ffield coff1
@@ -174,6 +175,8 @@
            31.400741776793 f, -49.181772902765 f, 21.526279829902 f,
            -0.423735506702 f, 0.034112523180 f,
 
+  .stack
+  
   : gfit ( n -- gfit[n] )
       gfit-struct * gfits + ;
       

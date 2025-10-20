@@ -179,8 +179,7 @@
 ;; ------------------------------------------------------------------
 
 (defclass <meta-def> (<scolon-def>)
-  ((mfa  :accessor mw-mfa   :initarg :mfa)
-   )
+  ((mfa  :accessor mw-mfa   :initarg :mfa))
   (:default-initargs
    :mfa  'no-meta-def))
 
@@ -188,7 +187,7 @@
   (error "Not defined in META: ~A" (fw-nfa self)))
 
 (defmacro mcode (name &key cname ccode does)
-  (format t "~%mcode: ~A" name)
+  (format t "~%mcode: ~A - " name)
   (let ((cfa   (chere))
         (ccode (concatenate 'string
                             (format nil "~%void ~A()~%{~%" cname)
@@ -196,15 +195,18 @@
                             (format nil "~&}~%")))
         (nfa   (string name))
         (ifa   (mhere))
-        (beh   (if does #'docol #'not-executable))
+        (beh   (if does 'docol 'not-executable))
         (ilst  (and does
-                    (fw-ifa (car (interpret does))))))
+                    (fw-ifa (car (interpret does)))
+                    )))
+    (unless does
+      (format t "No Exec - "))
     (vector-push-extend cname *cfn-list*)
     (vector-push-extend ccode *ccode-list*)
     (mcompile cfa)
     `(meta-link-derived-word '<meta-def>
                              :nfa  ,nfa
-                             :cfa  ,beh
+                             :cfa  ',beh
                              :ifa  ',ilst
                              :mfa  ,ifa)
     ))
@@ -338,9 +340,15 @@
 ;; --------------------------------------------------------------------------------
 
 (defun load-meta-kernel ()
-  (load (merge-pathnames "forth-itc-metacompiler-forthcode.lisp"
-                         *working-folder*)))
-;; (load-meta-kernel)
+  (goforth)
+  (dolist (fname '("forth-itc-clos-metacompiler-forthcode.lisp"
+                   "forth-itc-meta-primitives.lisp"
+                   ))
+    (load (merge-pathnames fname *working-folder*))
+    ))
+#|
+(load-meta-kernel)
+|#
 
 (defun reload ()
   (labels ((ld (fname)

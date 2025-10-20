@@ -15,7 +15,7 @@
 ;; reset the meta vocabulary and the metacompiler tables
 (interpret #>.end
   forth definitions
-  forget meta
+  overlay
   vocabulary meta
   meta definitions
 .end)
@@ -72,6 +72,7 @@
  (f/=      /=))
 
 (interpret #>.end
+
   : cls  cls
          code{ (setf *fstack* nil) } ;
 
@@ -343,7 +344,7 @@ inline float64 _f_fpop()
   ;; : outer-meta begin bl-word find meta-interpret again ;
   : outer-meta begin bl-word ?dup while find meta-interpret repeat quit ;
 
-  .end)
+.end)
 
 ;; -------------------------------------------------
 ;; Fundamental Metacode Behaviors
@@ -524,7 +525,7 @@ inline float64 _f_fpop()
 
   code .stack
     ;; check on stack cleanliness during meta-compile
-    (let ((*print-base* (@fcell *base*)))
+    (let ((*print-base* @base))
       (format t "~%------------------")
       (format t "~%pstack = ~A" (reverse *pstack*))
       (format t "~%fstack = ~A" (reverse *fstack*))
@@ -548,6 +549,7 @@ inline float64 _f_fpop()
        dup show-def-meta
        def ;
 
+  : f' ' ;
   : '  bl-word must-find mfa 1+ ;
   : cfa  1- ;
 
@@ -580,20 +582,26 @@ inline float64 _f_fpop()
   : while  compile (if) here swap 0 , ; immediate
   : repeat compile (jmp) , here swap !mem ; immediate
 
-  : ;     compile (exit)
+  : fshow f' (show) ;
+  
+  : f;    [compile] ; ; immediate
+  : f:    : ;
+
+  f: ;    compile (exit)
           [compile] [
           make-meta-word
           swap def
-          set-current-context ; immediate
-          
-  : :     set-current-context
+          set-current-context f; immediate
+
+  f: :    set-current-context
           bl-word
           dup show-def-meta
           here
           does (colon)
-          ] forth ;
-  .end)
+          ] f;
+
+  fshow :
+.end)
 
 ;; -----------------------------------------------------
-
 

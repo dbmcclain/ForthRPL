@@ -530,8 +530,11 @@
        :ccode #>.end
        int32 nsh = _f_spop();
        tos <<= nsh;
-       .end)
-
+       .end
+       :does #>.end
+          { error" nyi" }
+          .end)
+          
 (mcode "asr"
        :cname f_asr
        :ccode #>.end
@@ -588,4 +591,5 @@
        float64 *p = (float64*)_f_spop();
        *p = _f_fpop();
        .end)
+
 
