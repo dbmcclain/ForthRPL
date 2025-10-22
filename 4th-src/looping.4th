@@ -7,7 +7,6 @@
    #-:LISPWORKS
    (push sp@+ *skip-words*) }
  
- ;; code here (push (funcall %cur-icode% :last-pos) sp) }
  code here (sp-! (arena-last-pos %cur-icode%)) }
 
  code backpatch

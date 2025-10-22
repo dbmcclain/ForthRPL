@@ -393,8 +393,10 @@ parent vocabulary, and no LFA predecessor in the dictionary tree.
      ;; point.
      attachment gilded-state @ ancestor? ;
      
+ : .name   @nfa . ;
+
  : (forget)   ( w -- )
-     dup protected? if drop error" Protected def" then
+     dup protected? if .name error" is protected def" then
      dup prev-of swap find-current-voc
      dup current ! dup context !
      data-of ! ;

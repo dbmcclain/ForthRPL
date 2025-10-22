@@ -3,7 +3,7 @@
 
  { skip-to-eol }          define-word ;; immediate  ;; we now have comments to end of line...
  { #\) word drop }        define-word ( immediate   ( we now have embedded comments )
- { }                      define-word ) immediate   ( for confused Editor )
+
  { bl-word must-find }    define-word '                    ( -- verb )
  { ' , }                  define-word [compile] immediate  ( -- ) ;; valid only in compile mode
  { bl-word [compile] { }  define-word :                    ( -- name verb -> compile mode )
@@ -40,9 +40,8 @@
           )) }
 
  : ;code{ compile (;code)
-          [compile] code{
-          finalize-code swdef ; immediate
-          
+          [compile] code{ ; immediate
+
  code ;:
   ;; stack contains data
   ;; this performs EXIT and the follow i-code

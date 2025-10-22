@@ -1095,7 +1095,7 @@
             (let ((end (position-if #'whitespace-char-p buf
                                     :start (1+ pos))))
               (values (subseq buf pos end)
-                      (and end (1+ end))))
+                      end))
           ;; else
           (go-iter)))
     )))
@@ -1107,8 +1107,7 @@
     (let ((end (position-if (curry #'char= #\newline) buf
                             :start pos)))
       (values (subseq buf pos end)
-              (and end
-                   (1+ end))))
+              end))
     ))
 
 (defun word-to-delimiter (delim buf pos)
@@ -1130,7 +1129,9 @@
           (setf str (concatenate 'string str (subseq buf start pos)))
           (if pos
               (values str
-                      (1+ pos))
+                      (if (eql delim #\newline)
+                          pos
+                        (1+ pos)))
             (go-iter)))
         ))))
 
@@ -1246,14 +1247,14 @@
 
 ;; -------------------------------------------------------------------
 
-(defun make-string-reader (&rest bufs)
+(defun make-strings-reader (&rest bufs)
   (flet ((next-buffer ()
            (or (pop bufs)
                :eof)))
     (make-input-reader #'next-buffer)))
 
 (defun interpret (verbs-string &optional (w *tic-outer*))
-  (with-clean-system (make-string-reader verbs-string)
+  (with-clean-system (make-strings-reader verbs-string)
     (run-interpreter w)))
 
 ;; ---------------------------------------------------------------------

@@ -207,9 +207,9 @@
       )))
 
 (code must-find
-  (let ((name tos))
+  (let ((name sp@+))
     (if name
-        (setf tos (must-find name))
+        (sp-! (must-find name))
       (report-error " EOF error"))))
 
 (code interpret
