@@ -112,9 +112,14 @@
 ;; --------------------------------------------
 ;; Adding VOCABULARY FORTH - first word in the dictionary
 
-(let ((v  (make-instance '<vocabulary>
+(let* ((pair (vector nil nil))
+       (v  (make-instance '<vocabulary>
                          :nfa "FORTH"
-                         :lfa nil)))
+                         :lfa nil
+                         :dfa pair
+                         )))
+  (push v (aref pair 0))
+  (vector-push-extend v *dict*)
   (setf *tic-forth*   v
         (current-voc) v
         (context-voc) v))

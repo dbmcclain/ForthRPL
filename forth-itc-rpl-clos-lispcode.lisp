@@ -96,7 +96,7 @@
 (defclass <scode-def> (<code-def>)
   ((verb-type :accessor verb-type :initarg :verb-type)
    (has-data? :accessor has-data? :initarg :has-data?)
-   (dfa       :accessor fw-dfa  :initarg :dfa))
+   (dfa       :accessor fw-dfa    :initarg :dfa))
   (:default-initargs
    :verb-type ";CODE"
    :has-data? t
@@ -384,16 +384,28 @@
 (defsetf current-voc set-current-voc)
 
 
-(defun latest-in-voc (voc)
+(defun defs-of-voc (voc)
   (@fcell (data-of voc)))
 
+(defun set-defs-of-voc (voc lst)
+  (!fcell (data-of voc) lst)
+  lst)
+
+(defsetf defs-of-voc  set-defs-of-voc)
+
+
+(defun latest-in-voc (voc)
+  (car (defs-of-voc voc)))
+
 (defun set-latest-in-voc (voc w)
-  (!fcell (data-of voc) w))
+  (push w (defs-of-voc voc))
+  w)
 
 (defsetf latest-in-voc  set-latest-in-voc)
 
 ;; --------------------------------------------
 
+#|
 (defun forth-lookup-from-word (name w)
   (nlet iter ((w w))
     (when w
@@ -408,6 +420,18 @@
     (when voc
       (forth-lookup-from-word name (latest-in-voc voc))
       )))
+|#
+(defun forth-globals-lookup (w &optional (voc (context-voc)))
+  (when-let (name (ignore-errors (string w))) ;; e.g., fails on numbers
+    (nlet iter ((voc voc))
+      (when voc
+        (or (find name (@fcell (data-of voc))
+                  :test #'string-equal
+                  :key #'(lambda (w)
+                           (string (name-of w))))
+            (go-iter (@fcell (data-of voc) 1)))
+        ))
+    ))
 
 ;; -------------------------------------------------------------------
 ;; Local Vars...
@@ -696,11 +720,21 @@
 ;; ----------------------------------------------------
 ;; defining words
 
+(defvar *dict*)
+(defvar *vocabs*)
+
+(defun init-dict ()
+  (setf *dict* (make-array 512
+                           :adjustable   t
+                           :fill-pointer 0)
+        *vocabs* nil))
+
 (defun last-def ()
   (latest-in-voc (current-voc)))
 
 (defun link (w)
   (format t "Defining: ~A~&" (name-of w))
+  (vector-push-extend w *dict*)
   (setf (latest-in-voc (current-voc)) w))
 
 (defun immediate ()
@@ -727,8 +761,9 @@
    ))
 
 (defmethod initialize-instance :after ((self <vocabulary>) &key &allow-other-keys)
-  (setf (data-of self) (vector self (current-voc))))
-   
+  (push self *vocabs*))
+
+
 (defmacro vocabulary (name &rest args)
   (format t "vocabulary: ~A~&" name)
   `(link-derived-word '<vocabulary>
@@ -947,30 +982,28 @@
 
 ;; ----------------------------------------------------
 
-(defmacro define-unary-ops (&rest ops)
+(defun do-unary-op (op)
+  (setf tos (funcall op tos)))
+
+(defun do-binary-op (op)
+  (let ((opnd2 sp@+))
+    (setf tos (funcall op tos opnd2))))
+
+(defun op-mapper (fn ops)
   `(progn
      ,@(mapcar #`(code ,(if (consp a1)
                             (car a1)
                           a1)
-                   (setf tos
-                         (,(if (consp a1)
-                               (cadr a1)
-                             a1)
-                          tos)))
+                   (,fn ',(if (consp a1)
+                              (cadr a1)
+                            a1)))
                ops)))
 
+(defmacro define-unary-ops (&rest ops)
+  (op-mapper 'do-unary-op ops))
+
 (defmacro define-binary-ops (&rest ops)
-  `(progn
-     ,@(mapcar #`(code ,(if (consp a1)
-                            (car a1)
-                          a1)
-                   (let ((opnd2 sp@+))
-                     (setf tos
-                           (,(if (consp a1)
-                                 (cadr a1)
-                               a1)
-                            tos opnd2))))
-               ops)))
+  (op-mapper 'do-binary-op ops))
 
 (defun dfloat (x)
   (float x 1d0))
@@ -1389,6 +1422,7 @@
 
 ;; -----------------------------------------------
 
+#|
 (defun vlist ()
   (when-let (voc (context-voc))
     (nlet iter ((p (latest-in-voc voc)))
@@ -1398,7 +1432,18 @@
         (go-iter (prev-of p)))
       ))
   (values))
+|#
+(defun vlist ()
+  (nlet iter ((voc (context-voc)))
+    (when voc
+      (format t "~&Vocabulary: ~A~%" (name-of voc))
+      (dolist (w (@fcell (data-of voc)))
+        (princ (name-of w))
+        (princ #\space))
+      (go-iter (@fcell (data-of voc) 1))))
+  (values))
 
+#|
 (defun forth-apropos (str)
   (nlet iter ((wp  (latest-in-voc (context-voc)))
               (ac  nil))
@@ -1411,10 +1456,25 @@
             ;; else
             (go-iter (prev-of wp) ac)))
       ;; else
-      (sort (nreverse ac) #'<
-            :key #'length))
-    ))
+      (sort ac #'string-lessp)
+      )))
+|#
+(defun forth-apropos (str)
+  (nlet iter ((voc (context-voc))
+              (ac  nil))
+    (if voc
+        (progn
+          (dolist (wp  (@fcell (data-of voc)))
+            (let ((name (string (name-of wp))))
+              (when (search str name
+                            :test #'char-equal)
+                (pushnew name ac :test #'string-equal))))
+          (go-iter (@fcell (data-of voc) 1) ac))
+      ;; else
+      (sort ac #'string-lessp)
+      )))
 
+#|
 (defun catalog ()
   (let ((ac  (make-array 28
                          :initial-element nil))
@@ -1450,6 +1510,92 @@
                       (sort lst #'string-lessp)))
         (coerce ac 'list)))
     )))
+|#
+(defun catalog ()
+  (let ((ac  (make-array 28
+                         :initial-element nil))
+        (pos nil)
+        (tbl #."abcdefghijklmnopqrstuvwxyz"))
+  (nlet iter ((voc (context-voc)))
+    (if voc
+        (progn
+          (dolist (wp (@fcell (data-of voc)))
+            (let* ((name (string (name-of wp)))
+                   (ch   (char name 0)))
+              (cond ((digit-char-p ch)
+                     (setf (aref ac 26)
+                           (adjoin name (aref ac 26)
+                                   :test #'string-equal)))
+                    
+                    ((setf pos (position ch tbl
+                                         :test #'char-equal))
+                     (setf (aref ac pos)
+                           (adjoin name (aref ac pos)
+                                   :test #'string-equal)))
+                    
+                    (t
+                     (setf (aref ac 27)
+                           (adjoin name (aref ac 27)
+                                   :test #'string-equal))
+                     ))
+              ))
+          (go-iter (@fcell (data-of voc) 1)))
+      ;; else
+      (progn
+        (loop for ix from 0
+              for lst across ac
+              do
+                (setf (aref ac ix)
+                      (sort lst #'string-lessp)))
+        (coerce ac 'list)))
+    )))
+
+;; --------------------------------------------
+
+(defun forgetter (wp)
+  (let* ((pos  (position wp *dict*))
+         (wrds (coerce (subseq *dict* pos) 'list)))
+    ;;
+    ;; The *DICT* is a chronologically ordered vector of verbs. We
+    ;; trim from most recent verbs back to earlier entries.
+    ;;
+    ;; If any vocabularies are among the discarded words,
+    ;; we can toss them out of the *VOCABS* list.
+    ;;
+    (setf *vocabs* (remove-if (um:rcurry #'find wrds) *vocabs*))
+
+    ;; Next, for each remaining vocabulary, we check to find the first
+    ;; word among the discards that is held in that vocabulary. If we
+    ;; find one, then we know that all later words in that same
+    ;; vocabulary are going to be discarded too.
+    ;;
+    ;; And that goes for later words, in the same vocabulary, among
+    ;; the discards too. So we might as well trim them away from the
+    ;; discards list.
+    ;;
+    (nlet iter ((vocs *vocabs*)
+                (wrds wrds))
+      (when (and vocs wrds)
+        (let* ((voc   (car vocs))
+               (tl    (cdr vocs))
+               (vwrds (defs-of-voc voc))
+               (test  (um:rcurry #'member vwrds))
+               (xwrds (some test wrds)))
+          (cond (xwrds
+                 (setf (defs-of-voc voc) (cdr xwrds))
+                 (go-iter tl (remove-if test wrds)))
+                (t
+                 (go-iter tl wrds))
+                ))))
+    ;; NIL out the deleted slots for GC
+    (fill *dict* nil :start pos)
+    (setf (fill-pointer *dict*) pos)
+    ))
+
+(defun voc-of-wrd (wp)
+  (dolist (voc *vocabs*)
+    (when (member wp (defs-of-voc voc))
+        (return-from voc-of-wrd voc))))
 
 ;; -------------------------------------------------
 ;; Pathname from:
@@ -1470,6 +1616,7 @@
   (let ((*readtable* (copy-readtable)))
     (set-macro-character #\] nil)
     (set-macro-character #\} nil)
+    (init-dict)
     (load *the-forth-kernel*)))
 
 ;; ----------------------------------------------------------

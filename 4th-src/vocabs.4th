@@ -6,7 +6,8 @@
        (sp-! (last-def)) }
 
  code (vocabulary)
-       (sp-! (derive-word '<vocabulary>)) }
+       (sp-! (derive-word '<vocabulary>
+	        :dfa (vector nil (current-voc)) )) }
                     
  : vocabulary   ( -- )
      (vocabulary)
@@ -16,6 +17,10 @@
      context @ current ! ;
 
  code vlist   (vlist) }
+
+ code voc-of 
+   (let ((wp sp@+))
+     (sp-! (voc-of-wrd wp))) }
 
 ;; ----------------------------
 
@@ -28,9 +33,11 @@
 
  code @nfa
     (setf tos (name-of tos)) }
-   
+
+#|   
  code @lfa
     (setf tos (prev-of tos)) }
+|#
 
  code @dfa ;; as in: ' wwww @dfa
     (setf tos (data-of tos)) }
@@ -42,21 +49,33 @@
     (setf tos (icode-of tos)) }
 
 : name-of  @nfa ;
-: prev-of  @lfa ;
+;; : prev-of  @lfa ;
 : data-of  @dfa ;
 : beh-of   @cfa ;
 : icode-of @ifa ;
 
+: defs-of  ( voc -- list )
+     data-of @ ;
+
+code memq  ;; ( item list -- list' )
+	(let* ((lst sp@+)
+	       (item sp@+))
+           (sp-!  (member item lst))) }
+	
+: prevs-of   context @ defs-of memq cdr ;
+: prev-of    prevs-of car ;
     
  code !nfa
       (let* ((w        sp@+)    ;; LET* because we need sequential oper
              (new-name sp@+))
         (setf (name-of w) new-name)) }
-      
+
+#|      
  code !lfa
       (let* ((w        sp@+)
              (new-prev sp@+))
         (setf (prev-of w) new-prev)) }
+|#
 
  code !cfa
        (let* ((w        sp@+)
@@ -75,7 +94,7 @@
         (setf (data-of w) val)) }
 
 : !name-of !nfa ;
-: !prev-of !lfa ;
+;; : !prev-of !lfa ;
 : !data-of !dfa ;
 : !beh-of  !cfa ;
 : !icode-of !ifa ;
@@ -243,7 +262,7 @@ parent vocabulary, and no LFA predecessor in the dictionary tree.
      (setf tos (search tos str :test #'char-equal))) }
 
  : last-def  ( voc -- wrd )
-     data-of @ ;
+     defs-of car ;
      
  : current-last   ( -- wrd )
      current @ last-def ;
@@ -287,15 +306,31 @@ parent vocabulary, and no LFA predecessor in the dictionary tree.
    └─────────────────────────────┘                                                             
 |#
 
+;; --------------------------------------------
+
+ code dict-index
+   (sp-! (fill-pointer *dict*)) }
+
+ code dict-entry
+   (let ((ix  sp@+))
+      (sp-!  (aref *dict* ix))) }
+
+ code dict-pos
+   (let* ((wp sp@+)
+         (pos (position wp *dict*)))
+     (sp-! pos)) }
+
+ code (forgetter)
+    (forgetter sp@+)) }
+
+;; --------------------------------------------
+
  : dict-state  ( -- vec )
-     current @ dup data-of @ 2vec ;
+     dict-index current @ 2vec ;
 
  : restore-dict ( vec -- )
-     dup snd    ;; the last word
-     swap fst   ;; the voc ptr
-     dup context !
-     dup current !
-     data-of ! ; 
+     dup fst dict-entry (forgetter)
+     snd context ! definitions ;
 
  ;; --------------------------------------------
  ;; REMEMBER & MARKER
@@ -330,11 +365,13 @@ parent vocabulary, and no LFA predecessor in the dictionary tree.
  nil variable gilded-state
 
  : gild
-      ['] FORTH data-of @ gilded-state ! ;
+      dict-index gilded-state ! ;
 
  : empty
       gilded-state @
-      ?dup-if ['] FORTH data-of ! then ;
+      ?dup-if [compile] FORTH definitions
+              dict-entry (forgetter)
+      then ;
 
  : ungild
       nil gilded-state ! ;
@@ -342,64 +379,18 @@ parent vocabulary, and no LFA predecessor in the dictionary tree.
  ;; --------------------------------------------
  ;; FORGET - a bit more complicated...
  
- : parent-voc-of  ( voc -- voc' )
-    data-of snd ;
-
- : ancestor?   ( w1 w2 -- t/f )
-    ;; return true if w1 is w2, or found in chain starting at w2
-    begin
-      2dup eq if drop exit then
-      dup
-    while
-      prev-of
-    repeat
-    swap-drop ;
-    
- : beneath?   ( w1 w2 -- t/f )
-    ;; return true if w2 beneath w1
-    swap prev-of ancestor? ;
-    
- : find-current-voc  ( w -- voc )
-    current @
-    begin
-      2dup beneath? if swap-drop exit then
-      parent-voc-of
-    again ;
-
- : is-forth?  ( w -- t/f )
-     ['] FORTH eq ;
-
- : attachment  ( w -- w' )
-     ;; If W resides in the main Forth vocabulary trunk then it is its
-     ;; own attachment point.
-     ;;
-     ;; Otherwise, find the ancestor vocabulary that resides in the
-     ;; main Forth trunk as the attachment point.
-     ;;
-     ;; An ancestor vocabulary residing in the main trunk will have a
-     ;; parent vocabulary that is FORTH.
-     ;;
-     dup find-current-voc dup is-forth? if drop exit then
-     swap-drop
-     begin
-        dup parent-voc-of is-forth? if exit then
-        parent-voc-of
-     again ;
-     
  : protected? ( w -- t/f )
      ;; W is protected if it lives in the main Forth trunk and it is
      ;; at or beneath the GILD point, or else W's ancestor vocabulary
      ;; that resides in the main Forth trunk is at or beneath the GILD
      ;; point.
-     attachment gilded-state @ ancestor? ;
+     dict-pos gilded-state @ ?dup if < else 2drop nil then ;  
      
  : .name   @nfa . ;
 
  : (forget)   ( w -- )
-     dup protected? if .name error" is protected def" then
-     dup prev-of swap find-current-voc
-     dup current ! dup context !
-     data-of ! ;
+     dup protected? if ." No, " .name error" is protected" then
+     (forgetter) ;
      
  : forget
      set-current-context
