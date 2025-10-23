@@ -70,18 +70,63 @@
 
 ;; -----------------------------------------------------
 
-(defclass <code-def> ()
+(defclass linked-mixin ()
+  ((nfa   :accessor  fw-nfa   :initarg :nfa)
+   (lfa   :accessor  fw-lfa   :initarg :lfa))
+  (:default-initargs
+   :nfa  "<ANON>"
+   :lfa  nil
+   ))
+
+(defgeneric find-entry-eq (wphd obj)
+  (:method ((wphd null) obj)
+   nil)
+  (:method ((wphd linked-mixin) obj)
+   (um:nlet iter ((hd  wphd))
+     (when hd
+       (when (eq obj hd)
+         (return-from find-entry-eq obj))
+       (go-iter (prev-of hd))))
+   ))
+
+(defgeneric find-entry-by-name (wphd name)
+  (:method ((wphd null) name)
+   nil)
+  (:method ((wphd linked-mixin) name)
+   (let ((sname (string name)))
+     (um:nlet iter ((hd wphd))
+       (when hd
+         (when (string-equal sname (string (name-of hd)))
+           (return-from find-entry-by-name hd))
+         (go-iter (prev-of hd))))
+     )))
+
+(defgeneric %dolinks (wphd fn)
+  (:method ((wphd null) fn)
+   nil)
+  (:method ((wphd linked-mixin) fn)
+   (um:nlet iter ((hd wphd))
+     (when hd
+       (funcall fn hd)
+       (go-iter (prev-of hd))))
+   ))
+
+(defmacro dolinks ((arg hd) &body body)
+  `(%dolinks ,hd (lambda (,arg) ,@body)))
+
+#+:LISPWORKS
+(editor:setup-indent "dolinks" 1)
+
+;; --------------------------------------------
+  
+(defclass <code-def> (linked-mixin)
   ((verb-type :accessor verb-type :initarg :verb-type)
    (has-data? :accessor has-data? :initarg :has-data?)
    (cfa       :accessor fw-cfa    :initarg :cfa      )
-   (nfa       :accessor fw-nfa    :initarg :nfa      )
-   (lfa       :accessor fw-lfa    :initarg :lfa      )
    (immed     :accessor is-immed  :initarg :immed    ))
   (:default-initargs
    :verb-type "CODE"
    :cfa       'no-behavior
-   :nfa       "<ANON>"
-   :lfa       (last-def)
    :immed     nil
    :has-data? nil
    ))
@@ -94,9 +139,7 @@
     (princ (name-of self) out-stream)))
 
 (defclass <scode-def> (<code-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type)
-   (has-data? :accessor has-data? :initarg :has-data?)
-   (dfa       :accessor fw-dfa    :initarg :dfa))
+  ((dfa       :accessor fw-dfa    :initarg :dfa))
   (:default-initargs
    :verb-type ";CODE"
    :has-data? t
@@ -383,7 +426,7 @@
 
 (defsetf current-voc set-current-voc)
 
-
+#|
 (defun defs-of-voc (voc)
   (@fcell (data-of voc)))
 
@@ -399,6 +442,14 @@
 
 (defun set-latest-in-voc (voc w)
   (push w (defs-of-voc voc))
+  w)
+|#
+
+(defun latest-in-voc (voc)
+  (@fcell (data-of voc)))
+
+(defun set-latest-in-voc (voc w)
+  (!fcell (data-of voc) w)
   w)
 
 (defsetf latest-in-voc  set-latest-in-voc)
@@ -421,6 +472,7 @@
       (forth-lookup-from-word name (latest-in-voc voc))
       )))
 |#
+#|
 (defun forth-globals-lookup (w &optional (voc (context-voc)))
   (when-let (name (ignore-errors (string w))) ;; e.g., fails on numbers
     (nlet iter ((voc voc))
@@ -429,6 +481,15 @@
                   :test #'string-equal
                   :key #'(lambda (w)
                            (string (name-of w))))
+            (go-iter (@fcell (data-of voc) 1)))
+        ))
+    ))
+|#
+(defun forth-globals-lookup (w &optional (voc (context-voc)))
+  (when-let (name (ignore-errors (string w))) ;; e.g., fails on numbers
+    (nlet iter ((voc voc))
+      (when voc
+        (or (find-entry-by-name (latest-in-voc voc) name)
             (go-iter (@fcell (data-of voc) 1)))
         ))
     ))
@@ -747,12 +808,14 @@
 (defun link-derived-word (parent &rest parms)
   (link (apply #'derive-word parent parms)))
 
+(defmethod initialize-instance :after ((obj linked-mixin) &key &allow-other-keys)
+  (when (current-voc)
+    (setf (prev-of obj) (last-def))))
+
 ;; ---------------------------------------------
 
 (defclass <vocabulary> (<scode-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type)
-   (has-data? :accessor has-data? :initarg :has-data?)
-   (cfa       :accessor fw-cfa    :initarg :cfa))
+  ()
   (:default-initargs
    :verb-type "VOCABULARY"
    :has-data? nil
@@ -784,10 +847,7 @@
 ;; ---------------------------------------------
 
 (defclass <colon-def> (<code-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type)
-   (has-data? :accessor has-data? :initarg :has-data?)
-   (cfa       :accessor fw-cfa    :initarg :cfa)
-   (ifa       :accessor fw-ifa  :initarg :ifa))
+  ((ifa       :accessor fw-ifa  :initarg :ifa))
   (:default-initargs
    :verb-type ":"
    :cfa       'docol
@@ -818,9 +878,7 @@
 ;; ---------------------------------------------
 
 (defclass <constant> (<scode-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type)
-   (has-data? :accessor has-data? :initarg :has-data?)
-   (cfa       :accessor fw-cfa    :initarg :cfa))
+  ()
   (:default-initargs
    :verb-type "CONSTANT"
    :cfa       'doval
@@ -835,9 +893,7 @@
                       ))
 
 (defclass <scolon-def> (<scode-def> <colon-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type)
-   (has-data? :accessor has-data? :initarg :has-data?)
-   (cfa       :accessor fw-cfa    :initarg :cfa))
+  ()
   (:default-initargs
    :verb-type ";:"
    :has-data? t
@@ -849,9 +905,7 @@
 ;; ---------------------------------------------
 
 (defclass <local-accessor> (<scode-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type)
-   (has-data? :accessor has-data? :initarg :has-data?)
-   (cfa       :accessor fw-cfa    :initarg :cfa))
+  ()
   (:default-initargs
    :verb-type "LOCAL"
    :has-data? nil
@@ -884,9 +938,7 @@
 ;; Dynvars
 
 (defclass <dynvar> (<scode-def>)
-  ((verb-type :accessor verb-type :initarg :verb-type)
-   (has-data? :accessor has-data? :initarg :has-data?)
-   (cfa       :accessor fw-cfa    :initarg :cfa))
+  ()
   (:default-initargs
    :verb-type "DYNVAR"
    :has-data? nil
@@ -1422,17 +1474,18 @@
 
 ;; -----------------------------------------------
 
-#|
+#||#
 (defun vlist ()
-  (when-let (voc (context-voc))
-    (nlet iter ((p (latest-in-voc voc)))
-      (when p
-        (princ (name-of p))
-        (princ #\space)
-        (go-iter (prev-of p)))
-      ))
+  (nlet iter ((voc (context-voc)))
+    (when voc
+      (format t "~&Vocabulary: ~A~%" (name-of voc))
+      (dolinks (w (latest-in-voc voc))
+        (princ (name-of w))
+        (princ #\space))
+      (go-iter (@fcell (data-of voc) 1))))
   (values))
-|#
+#||#
+#|
 (defun vlist ()
   (nlet iter ((voc (context-voc)))
     (when voc
@@ -1442,23 +1495,24 @@
         (princ #\space))
       (go-iter (@fcell (data-of voc) 1))))
   (values))
-
-#|
+|#
+#||#
 (defun forth-apropos (str)
-  (nlet iter ((wp  (latest-in-voc (context-voc)))
+  (nlet iter ((voc (context-voc))
               (ac  nil))
-    (if wp
-        (let ((name (string (name-of wp))))
-          (if (search str name
-                      :test #'char-equal)
-              (go-iter (prev-of wp) (adjoin name ac
-                                            :test #'string-equal))
-            ;; else
-            (go-iter (prev-of wp) ac)))
+    (if voc
+        (progn
+          (dolinks (wp (latest-in-voc voc))
+            (let ((name (string (name-of wp))))
+              (when (search str name
+                            :test #'char-equal)
+                (pushnew name ac :test #'string-equal))))
+          (go-iter (@fcell (data-of voc) 1) ac))
       ;; else
       (sort ac #'string-lessp)
       )))
-|#
+#||#
+#|
 (defun forth-apropos (str)
   (nlet iter ((voc (context-voc))
               (ac  nil))
@@ -1473,44 +1527,48 @@
       ;; else
       (sort ac #'string-lessp)
       )))
-
-#|
+|#
+#||#
 (defun catalog ()
   (let ((ac  (make-array 28
                          :initial-element nil))
         (pos nil)
         (tbl #."abcdefghijklmnopqrstuvwxyz"))
-  (nlet iter ((wp  (latest-in-voc (context-voc))))
-    (if wp
-        (let* ((name (string (name-of wp)))
-               (ch   (char name 0)))
-          (cond ((digit-char-p ch)
-                 (setf (aref ac 26)
-                       (adjoin name (aref ac 26)
-                               :test #'string-equal)))
-                
-                ((setf pos (position ch tbl
-                                     :test #'char-equal))
-                 (setf (aref ac pos)
-                       (adjoin name (aref ac pos)
-                               :test #'string-equal)))
-
-                (t
-                 (setf (aref ac 27)
-                       (adjoin name (aref ac 27)
-                               :test #'string-equal))
-                 ))
-          (go-iter (prev-of wp)))
-      ;; else
-      (progn
-        (loop for ix from 0
-              for lst across ac
-              do
-                (setf (aref ac ix)
-                      (sort lst #'string-lessp)))
-        (coerce ac 'list)))
-    )))
-|#
+    (nlet iter ((voc (context-voc)))
+      (if voc
+          (progn
+            (dolinks (wp (latest-in-voc voc))
+              (let* ((name (string (name-of wp)))
+                     (ch   (char name 0)))
+                (cond ((digit-char-p ch)
+                       (setf (aref ac 26)
+                             (adjoin name (aref ac 26)
+                                     :test #'string-equal)))
+                      
+                      ((setf pos (position ch tbl
+                                           :test #'char-equal))
+                       (setf (aref ac pos)
+                             (adjoin name (aref ac pos)
+                                     :test #'string-equal)))
+                      
+                      (t
+                       (setf (aref ac 27)
+                             (adjoin name (aref ac 27)
+                                     :test #'string-equal))
+                       ))
+                ))
+            (go-iter (@fcell (data-of voc) 1)))
+        ;; else
+        (progn
+          (loop for ix from 0
+                for lst across ac
+                do
+                  (setf (aref ac ix)
+                        (sort lst #'string-lessp)))
+          (coerce ac 'list)))
+      )))
+#||#
+#|
 (defun catalog ()
   (let ((ac  (make-array 28
                          :initial-element nil))
@@ -1549,7 +1607,7 @@
                       (sort lst #'string-lessp)))
         (coerce ac 'list)))
     )))
-
+|#
 ;; --------------------------------------------
 
 (defun forgetter (wp)
@@ -1578,11 +1636,14 @@
       (when (and vocs wrds)
         (let* ((voc   (car vocs))
                (tl    (cdr vocs))
-               (vwrds (defs-of-voc voc))
-               (test  (um:rcurry #'member vwrds))
-               (xwrds (some test wrds)))
+               ;; (vwrds (defs-of-voc voc))
+               ;; (test  (um:rcurry #'member vwrds))
+               (vwrds  (latest-in-voc voc))
+               (test   (um:curry #'find-entry-eq vwrds))
+               (xwrds  (some test wrds)))
           (cond (xwrds
-                 (setf (defs-of-voc voc) (cdr xwrds))
+                 ;; (setf (defs-of-voc voc) (cdr xwrds))
+                 (setf (latest-in-voc voc) (prev-of xwrds))
                  (go-iter tl (remove-if test wrds)))
                 (t
                  (go-iter tl wrds))
@@ -1592,10 +1653,16 @@
     (setf (fill-pointer *dict*) pos)
     ))
 
+#|
 (defun voc-of-wrd (wp)
   (dolist (voc *vocabs*)
     (when (member wp (defs-of-voc voc))
         (return-from voc-of-wrd voc))))
+|#
+(defun voc-of-wrd (wp)
+  (dolist (voc *vocabs*)
+    (when (find-entry-eq (latest-in-voc voc) wp)
+      (return-from voc-of-wrd voc))))
 
 ;; -------------------------------------------------
 ;; Pathname from:

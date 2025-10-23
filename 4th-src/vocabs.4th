@@ -34,10 +34,8 @@
  code @nfa
     (setf tos (name-of tos)) }
 
-#|   
  code @lfa
     (setf tos (prev-of tos)) }
-|#
 
  code @dfa ;; as in: ' wwww @dfa
     (setf tos (data-of tos)) }
@@ -49,33 +47,20 @@
     (setf tos (icode-of tos)) }
 
 : name-of  @nfa ;
-;; : prev-of  @lfa ;
+: prev-of  @lfa ;
 : data-of  @dfa ;
 : beh-of   @cfa ;
 : icode-of @ifa ;
 
-: defs-of  ( voc -- list )
-     data-of @ ;
-
-code memq  ;; ( item list -- list' )
-	(let* ((lst sp@+)
-	       (item sp@+))
-           (sp-!  (member item lst))) }
-	
-: prevs-of   context @ defs-of memq cdr ;
-: prev-of    prevs-of car ;
-    
  code !nfa
       (let* ((w        sp@+)    ;; LET* because we need sequential oper
              (new-name sp@+))
         (setf (name-of w) new-name)) }
 
-#|      
  code !lfa
       (let* ((w        sp@+)
              (new-prev sp@+))
         (setf (prev-of w) new-prev)) }
-|#
 
  code !cfa
        (let* ((w        sp@+)
@@ -94,7 +79,7 @@ code memq  ;; ( item list -- list' )
         (setf (data-of w) val)) }
 
 : !name-of !nfa ;
-;; : !prev-of !lfa ;
+: !prev-of !lfa ;
 : !data-of !dfa ;
 : !beh-of  !cfa ;
 : !icode-of !ifa ;
@@ -262,7 +247,7 @@ parent vocabulary, and no LFA predecessor in the dictionary tree.
      (setf tos (search tos str :test #'char-equal))) }
 
  : last-def  ( voc -- wrd )
-     defs-of car ;
+     data-of fst ;
      
  : current-last   ( -- wrd )
      current @ last-def ;
