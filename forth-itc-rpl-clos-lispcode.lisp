@@ -421,24 +421,6 @@
 
 (defsetf current-voc set-current-voc)
 
-#|
-(defun defs-of-voc (voc)
-  (@fcell (data-of voc)))
-
-(defun set-defs-of-voc (voc lst)
-  (!fcell (data-of voc) lst)
-  lst)
-
-(defsetf defs-of-voc  set-defs-of-voc)
-
-
-(defun latest-in-voc (voc)
-  (car (defs-of-voc voc)))
-
-(defun set-latest-in-voc (voc w)
-  (push w (defs-of-voc voc))
-  w)
-|#
 
 (defun latest-in-voc (voc)
   (@fcell (data-of voc)))
@@ -451,35 +433,6 @@
 
 ;; --------------------------------------------
 
-#|
-(defun forth-lookup-from-word (name w)
-  (nlet iter ((w w))
-    (when w
-      (if (string-equal (string (name-of w)) name)
-          w
-        ;; else
-        (go-iter (prev-of w)))
-      )))
-
-(defun forth-globals-lookup (w &optional (voc (context-voc)))
-  (when-let (name (ignore-errors (string w))) ;; e.g., fails on numbers
-    (when voc
-      (forth-lookup-from-word name (latest-in-voc voc))
-      )))
-|#
-#|
-(defun forth-globals-lookup (w &optional (voc (context-voc)))
-  (when-let (name (ignore-errors (string w))) ;; e.g., fails on numbers
-    (nlet iter ((voc voc))
-      (when voc
-        (or (find name (@fcell (data-of voc))
-                  :test #'string-equal
-                  :key #'(lambda (w)
-                           (string (name-of w))))
-            (go-iter (@fcell (data-of voc) 1)))
-        ))
-    ))
-|#
 (defun forth-globals-lookup (w &optional (voc (context-voc)))
   (when-let (name (ignore-errors (string w))) ;; e.g., fails on numbers
     (nlet iter ((voc voc))
@@ -1527,7 +1480,6 @@
 
 ;; -----------------------------------------------
 
-#||#
 (defun vlist ()
   (nlet iter ((voc (context-voc)))
     (when voc
@@ -1537,19 +1489,7 @@
         (princ #\space))
       (go-iter (@fcell (data-of voc) 1))))
   (values))
-#||#
-#|
-(defun vlist ()
-  (nlet iter ((voc (context-voc)))
-    (when voc
-      (format t "~&Vocabulary: ~A~%" (name-of voc))
-      (dolist (w (@fcell (data-of voc)))
-        (princ (name-of w))
-        (princ #\space))
-      (go-iter (@fcell (data-of voc) 1))))
-  (values))
-|#
-#||#
+
 (defun forth-apropos (str)
   (nlet iter ((voc (context-voc))
               (ac  nil))
@@ -1564,24 +1504,7 @@
       ;; else
       (sort ac #'string-lessp)
       )))
-#||#
-#|
-(defun forth-apropos (str)
-  (nlet iter ((voc (context-voc))
-              (ac  nil))
-    (if voc
-        (progn
-          (dolist (wp  (@fcell (data-of voc)))
-            (let ((name (string (name-of wp))))
-              (when (search str name
-                            :test #'char-equal)
-                (pushnew name ac :test #'string-equal))))
-          (go-iter (@fcell (data-of voc) 1) ac))
-      ;; else
-      (sort ac #'string-lessp)
-      )))
-|#
-#||#
+
 (defun catalog ()
   (let ((ac  (make-array 28
                          :initial-element nil))
@@ -1620,47 +1543,7 @@
                         (sort lst #'string-lessp)))
           (coerce ac 'list)))
       )))
-#||#
-#|
-(defun catalog ()
-  (let ((ac  (make-array 28
-                         :initial-element nil))
-        (pos nil)
-        (tbl #."abcdefghijklmnopqrstuvwxyz"))
-  (nlet iter ((voc (context-voc)))
-    (if voc
-        (progn
-          (dolist (wp (@fcell (data-of voc)))
-            (let* ((name (string (name-of wp)))
-                   (ch   (char name 0)))
-              (cond ((digit-char-p ch)
-                     (setf (aref ac 26)
-                           (adjoin name (aref ac 26)
-                                   :test #'string-equal)))
-                    
-                    ((setf pos (position ch tbl
-                                         :test #'char-equal))
-                     (setf (aref ac pos)
-                           (adjoin name (aref ac pos)
-                                   :test #'string-equal)))
-                    
-                    (t
-                     (setf (aref ac 27)
-                           (adjoin name (aref ac 27)
-                                   :test #'string-equal))
-                     ))
-              ))
-          (go-iter (@fcell (data-of voc) 1)))
-      ;; else
-      (progn
-        (loop for ix from 0
-              for lst across ac
-              do
-                (setf (aref ac ix)
-                      (sort lst #'string-lessp)))
-        (coerce ac 'list)))
-    )))
-|#
+
 ;; --------------------------------------------
 
 (defun forgetter (wp)
@@ -1710,12 +1593,6 @@
       (setf (context-voc) *tic-forth*))
     ))
 
-#|
-(defun voc-of-wrd (wp)
-  (dolist (voc *vocabs*)
-    (when (member wp (defs-of-voc voc))
-        (return-from voc-of-wrd voc))))
-|#
 (defun voc-of-wrd (wp)
   (dolist (voc *vocabs*)
     (when (find-entry (latest-in-voc voc) wp)
