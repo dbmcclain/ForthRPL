@@ -328,9 +328,11 @@ code !vocabs
     dup !dict-index
     <r << vocabs 
       begin pop 
-      ?dup-while dup mempos-of i < 
-               if swap over i trim-words-in-voc
-               else drop 
+      ?dup-while dup @mfa i < 
+               if swap 
+                  over i trim-words-in-voc
+               else
+                  drop 
                then
       repeat 
       drop r> drop 
@@ -397,18 +399,21 @@ code !vocabs
      ;; at or beneath the GILD point, or else W's ancestor vocabulary
      ;; that resides in the main Forth trunk is at or beneath the GILD
      ;; point.
-     mempos-of gilded-state @ ?dup if < else 2drop nil then ;  
+     @mfa gilded-state @ ?dup if < else 2drop nil then ;  
      
- code memq 
+ code mem 
    (let* ((lst sp@+)
           (wp  sp@+))
       (sp-! (member wp lst))) }
 
+ : voc-vis? 
+     @ vocabs mem not ;
+
  : (forget)   ( w -- )
      dup protected? if ." No, " .name error" is protected" then
-     mempos-of trim-vocs
-     context @ vocabs memq not if [compile] FORTH then
-     current @ vocabs memq not if definitions then ;
+     @mfa trim-vocs
+     context voc-vis? if [compile] FORTH then
+     current voc-vis? if definitions then ;
      
  : forget
      bl-word find
