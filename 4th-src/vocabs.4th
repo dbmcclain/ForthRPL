@@ -16,18 +16,9 @@
  : definitions  ( -- )
      context @ current ! ;
 
- code vlist   (vlist) }
-
  code voc-of 
    (let ((wp sp@+))
      (sp-! (voc-of-wrd wp))) }
-
-;; ----------------------------
-
-  : ?execute ( fn -- fn or closure )
-    -- used by some compiling words that construct functions
-    -- sometimes we need them to execute at toplevel
-    toplevel? if execute then ;
 
 ;; --------------------------------------------
 
@@ -238,6 +229,9 @@ parent vocabulary, and no LFA predecessor in the dictionary tree.
 ;; --------------------------------------------
 ;; Some useful dictionary probing words
 
+code next-word-this-line
+	(sp-! (next-word-this-line #\space)) }
+
  : exists?
      ;; return true if word on stack exists in the dictionary
      bl-word find swap-drop ;
@@ -255,27 +249,26 @@ parent vocabulary, and no LFA predecessor in the dictionary tree.
  : context-last   ( -- wrd )
      context @ last-def ;
      
- code (apropos)
-    ;; returns a list of words sorted in increasing length
-    (setf tos (forth-apropos tos)) }
-
- : apropos
-     ;; print of list of approximate matches to a word
-     bl-word (apropos)
+ : .list
      begin
      ?dup-while
        pop . space
      repeat ;
 
- code (catalog)
-    (sp-! (catalog)) }
-
  : catalog 
-     (catalog)
+     code{ (sp-! (catalog)) }
      begin
      ?dup-while
 	pop . cr
      repeat ;
+
+ : vlist
+    next-word-this-line ?dup
+    if code{ (setf tos (forth-apropos tos)) } .list
+    else drop code{ (vlist) } 
+    then ;
+
+: words vlist ;
 
 ;; --------------------------------------------
 ;; Dictionary State
@@ -378,7 +371,6 @@ parent vocabulary, and no LFA predecessor in the dictionary tree.
      (forgetter) ;
      
  : forget
-     set-current-context
      bl-word find
      dup ifte
           { swap-drop (forget) }

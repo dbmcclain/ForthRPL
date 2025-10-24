@@ -323,18 +323,11 @@
        set-current-context ] )
 (immediate)
 
-(colon finalize-code
+(colon }
+        compile exit
         [  import-icode
         set-current-context
         pop-compile-context )
-
-(colon }
-        ;; try this out... at the end of a definition
-        ;; the context is reset to current. Vocabulary switching
-        ;; inside the definition does not carry forward after the
-        ;; end of the new definition.
-        compile exit
-        finalize-code )
 (immediate)
 
 ;; ---------------------------------------------------

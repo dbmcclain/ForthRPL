@@ -70,7 +70,7 @@
 
 ;; -----------------------------------------------------
 
-(defclass linked-mixin ()
+(defclass named-linked-mixin ()
   ((nfa   :accessor  fw-nfa   :initarg :nfa)
    (lfa   :accessor  fw-lfa   :initarg :lfa))
   (:default-initargs
@@ -81,7 +81,7 @@
 (defgeneric find-entry-eq (wphd obj)
   (:method ((wphd null) obj)
    nil)
-  (:method ((wphd linked-mixin) obj)
+  (:method ((wphd named-linked-mixin) obj)
    (um:nlet iter ((hd  wphd))
      (when hd
        (when (eq obj hd)
@@ -92,7 +92,7 @@
 (defgeneric find-entry-by-name (wphd name)
   (:method ((wphd null) name)
    nil)
-  (:method ((wphd linked-mixin) name)
+  (:method ((wphd named-linked-mixin) name)
    (let ((sname (string name)))
      (um:nlet iter ((hd wphd))
        (when hd
@@ -104,7 +104,7 @@
 (defgeneric %dolinks (wphd fn)
   (:method ((wphd null) fn)
    nil)
-  (:method ((wphd linked-mixin) fn)
+  (:method ((wphd named-linked-mixin) fn)
    (um:nlet iter ((hd wphd))
      (when hd
        (funcall fn hd)
@@ -119,7 +119,7 @@
 
 ;; --------------------------------------------
   
-(defclass <code-def> (linked-mixin)
+(defclass <code-def> (named-linked-mixin)
   ((verb-type :accessor verb-type :initarg :verb-type)
    (has-data? :accessor has-data? :initarg :has-data?)
    (cfa       :accessor fw-cfa    :initarg :cfa      )
@@ -808,7 +808,7 @@
 (defun link-derived-word (parent &rest parms)
   (link (apply #'derive-word parent parms)))
 
-(defmethod initialize-instance :after ((obj linked-mixin) &key &allow-other-keys)
+(defmethod initialize-instance :after ((obj named-linked-mixin) &key &allow-other-keys)
   (when (current-voc)
     (setf (prev-of obj) (last-def))))
 
@@ -1186,6 +1186,23 @@
     )))
   
 
+(defun next-blank-delimited-word-this-line (buf pos)
+  (cond ((or (eq buf :eof)
+             (null pos)
+             (>= pos (length buf)))
+         (values nil pos))
+        
+        ((setf pos (position-if (complement #'whitespace-char-p) buf
+                                :start pos))
+         (let ((end (position-if #'whitespace-char-p buf
+                                 :start (1+ pos))))
+           (values (subseq buf pos end)
+                   end)))
+        (t
+         (values nil pos))
+        ))
+  
+
 (defun word-to-end-of-line (buf pos)
   (unless (or (null pos)
               (>= pos (length buf)))
@@ -1220,6 +1237,24 @@
             (go-iter)))
         ))))
 
+(defun word-to-delimiter-this-line (delim buf pos)
+  (let ((test-fn (curry #'char= delim)))
+    (cond ((or (eq buf :eof)
+               (null pos)
+               (>= pos (length buf)))
+           (values nil pos))
+
+          (t
+           (let* ((start pos)
+                  (end   (position-if test-fn buf
+                                      :start start)))
+             (values (subseq buf start end)
+                     (if (eql delim #\newline)
+                         pos
+                       (1+ pos)))
+             ))
+          )))
+
 (defun %next-word (delim buf pos)
   (case delim
     (#\space
@@ -1228,6 +1263,16 @@
      (word-to-end-of-line buf pos))
     (t
      (word-to-delimiter delim buf pos))
+    ))
+
+(defun %next-word-this-line (delim buf pos)
+  (case delim
+    (#\space
+     (next-blank-delimited-word-this-line buf pos))
+    (#\newline
+     (word-to-end-of-line buf pos))
+    (t
+     (word-to-delimiter-this-line delim buf pos))
     ))
 
 ;; --------------------------------------------
@@ -1247,6 +1292,16 @@
                     (pos  input-reader-pos)) rdr
      (multiple-value-bind (str new-pos)
          (%next-word delim buf pos)
+       (setf pos new-pos)
+       str)
+     )))
+
+(defgeneric input-reader-read-next-word-this-line (rdr delim)
+  (:method ((rdr input-reader) delim)
+   (with-accessors ((buf  input-reader-buf)
+                    (pos  input-reader-pos)) rdr
+     (multiple-value-bind (str new-pos)
+         (%next-word-this-line delim buf pos)
        (setf pos new-pos)
        str)
      )))
@@ -1285,6 +1340,9 @@
 
 (defun next-word (delim)
   (input-reader-read-next-word *next-word-reader* delim))
+
+(defun next-word-this-line (delim)
+  (input-reader-read-next-word-this-line *next-word-reader* delim))
 
 (defun refill-buffer ()
   (input-reader-refill-buffer *next-word-reader*))
@@ -1651,6 +1709,10 @@
     ;; NIL out the deleted slots for GC
     (fill *dict* nil :start pos)
     (setf (fill-pointer *dict*) pos)
+    (unless (find (current-voc) *vocabs*)
+      (setf (current-voc) *tic-forth*))
+    (unless (find (context-voc) *vocabs*)
+      (setf (context-voc) *tic-forth*))
     ))
 
 #|
