@@ -119,7 +119,6 @@
                          :dfa pair
                          )))
   (setf (aref pair 0) v)
-  (vector-push-extend v *dict*)
   (setf *tic-forth*   v
         (current-voc) v
         (context-voc) v))

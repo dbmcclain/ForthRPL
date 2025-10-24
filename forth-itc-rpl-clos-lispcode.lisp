@@ -50,6 +50,7 @@
 (defgeneric fw-cfa (x))
 (defgeneric fw-dfa (x))
 (defgeneric fw-ifa (x))
+(defgeneric fw-vfa (x))
 
 ;; --------------------------------------------
 
@@ -69,7 +70,7 @@
   `(fw-ifa ,w))
 
 (defmacro mempos-of (w)
-  `(fw-mfa ,w))
+  `(fw-vfa ,w))
 
 ;; -----------------------------------------------------
 ;; All dictionary entries are NAMED-LINKED-MIXIN
@@ -77,7 +78,7 @@
 (defclass named-linked-mixin ()
   ((nfa   :accessor  fw-nfa   :initarg :nfa)
    (lfa   :accessor  fw-lfa   :initarg :lfa)
-   (mfa   :accessor  fw-mfa   :initarg :mfa))
+   (vfa   :accessor  fw-vfa   :initarg :vfa))
   (:default-initargs
    :nfa  "<ANON>"
    :lfa  nil

@@ -37,7 +37,7 @@
  code @ifa
     (setf tos (icode-of tos)) }
 
-  code @mfa
+  code @vfa
     (setf tos (mempos-of tos)) }
 
 : name-of   @nfa ;
@@ -45,7 +45,7 @@
 : data-of   @dfa ;
 : beh-of    @cfa ;
 : icode-of  @ifa ;
-: mempos-of @mfa ;
+: mempos-of @vfa ;
 
  code !nfa
       (let* ((w        sp@+)    ;; LET* because we need sequential oper
@@ -73,7 +73,7 @@
              (val sp@+))
         (setf (data-of w) val)) }
 
- code !mfa
+ code !vfa
        (let* ((w   sp@+)
               (val sp@+))
           (setf (mempos-of w) val)) }
@@ -83,7 +83,7 @@
 : !data-of    !dfa ;
 : !beh-of     !cfa ;
 : !icode-of   !ifa ;
-: !mempos-of  !mfa ;
+: !mempos-of  !vfa ;
 
 : .name   @nfa . ;
 
@@ -315,7 +315,7 @@ code !vocabs
    begin 
       dup 
    while
-      dup @mfa i < 
+      dup @vfa i < 
 	if swap !fst
           r> drop exit 
         then
@@ -328,7 +328,7 @@ code !vocabs
     dup !dict-index
     <r << vocabs 
       begin pop 
-      ?dup-while dup @mfa i < 
+      ?dup-while dup @vfa i < 
                if swap 
                   over i trim-words-in-voc
                else
@@ -399,7 +399,7 @@ code !vocabs
      ;; at or beneath the GILD point, or else W's ancestor vocabulary
      ;; that resides in the main Forth trunk is at or beneath the GILD
      ;; point.
-     @mfa gilded-state @ ?dup if < else 2drop nil then ;  
+     @vfa gilded-state @ ?dup if < else 2drop nil then ;  
      
  code mem 
    (let* ((lst sp@+)
@@ -411,7 +411,7 @@ code !vocabs
 
  : (forget)   ( w -- )
      dup protected? if ." No, " .name error" is protected" then
-     @mfa trim-vocs
+     @vfa trim-vocs
      context voc-vis? if [compile] FORTH then
      current voc-vis? if definitions then ;
      
