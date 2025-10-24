@@ -85,6 +85,8 @@
 : !icode-of   !ifa ;
 : !mempos-of  !mfa ;
 
+: .name   @nfa . ;
+
 ;; --------------------------------------------
 ;; Dictionary Management
 #|
@@ -299,8 +301,40 @@ code next-word-this-line
  code dict-index
    (sp-! *mempos*) }
 
- code (forgetter)
-    (forgetter sp@+)) }
+ code !dict-index
+   (setf *mempos* sp@+) }
+
+code vocabs
+  (sp-! *vocabs*) }
+
+code !vocabs
+  (setf *vocabs* sp@+) }
+
+: trim-words-in-voc
+   <r @dfa dup fst
+   begin 
+      dup 
+   while
+      dup @mfa i < 
+	if swap !fst
+          r> drop exit 
+        then
+      @lfa
+   repeat
+   swap !fst
+   r> drop ;
+
+: trim-vocs
+    dup !dict-index
+    <r << vocabs 
+      begin pop 
+      ?dup-while dup mempos-of i < 
+               if swap over i trim-words-in-voc
+               else drop 
+               then
+      repeat 
+      drop r> drop 
+      >> !vocabs ;
 
 ;; --------------------------------------------
 
@@ -308,7 +342,7 @@ code next-word-this-line
      dict-index current @ 2vec ;
 
  : restore-dict ( vec -- )
-     dup fst (forgetter)
+     dup fst trim-vocs
      snd context ! definitions ;
 
  ;; --------------------------------------------
@@ -349,7 +383,7 @@ code next-word-this-line
  : empty
       gilded-state @
       ?dup-if [compile] FORTH definitions
-              (forgetter)
+              trim-vocs
       then ;
 
  : ungild
@@ -365,11 +399,16 @@ code next-word-this-line
      ;; point.
      mempos-of gilded-state @ ?dup if < else 2drop nil then ;  
      
- : .name   @nfa . ;
+ code memq 
+   (let* ((lst sp@+)
+          (wp  sp@+))
+      (sp-! (member wp lst))) }
 
  : (forget)   ( w -- )
      dup protected? if ." No, " .name error" is protected" then
-     mempos-of (forgetter) ;
+     mempos-of trim-vocs
+     context @ vocabs memq not if [compile] FORTH then
+     current @ vocabs memq not if definitions then ;
      
  : forget
      bl-word find

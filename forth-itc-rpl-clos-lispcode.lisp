@@ -1548,22 +1548,6 @@
 
 ;; --------------------------------------------
 
-(defun forgetter (pos)
-  (setf *mempos* pos
-        *vocabs* (remove-if (um:rcurry #'>= pos) *vocabs*
-                            :key #'fw-mfa))
-  (dolist (voc *vocabs*)
-    (let ((entry (find-entry (latest-in-voc voc)
-                             (lambda (entry)
-                               (< (mempos-of entry) pos)
-                               ))))
-      (when entry
-        (setf (latest-in-voc voc) entry))))
-  (unless (find (current-voc) *vocabs*)
-    (setf (current-voc) *tic-forth*))
-  (unless (find (context-voc) *vocabs*)
-    (setf (context-voc) *tic-forth*)))
-
 (defun voc-of-wrd (wp)
   (dolist (voc *vocabs*)
     (when (find-entry (latest-in-voc voc) wp)
