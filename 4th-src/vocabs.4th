@@ -37,11 +37,15 @@
  code @ifa
     (setf tos (icode-of tos)) }
 
-: name-of  @nfa ;
-: prev-of  @lfa ;
-: data-of  @dfa ;
-: beh-of   @cfa ;
-: icode-of @ifa ;
+  code @mfa
+    (setf tos (mempos-of tos)) }
+
+: name-of   @nfa ;
+: prev-of   @lfa ;
+: data-of   @dfa ;
+: beh-of    @cfa ;
+: icode-of  @ifa ;
+: mempos-of @mfa ;
 
  code !nfa
       (let* ((w        sp@+)    ;; LET* because we need sequential oper
@@ -69,11 +73,17 @@
              (val sp@+))
         (setf (data-of w) val)) }
 
-: !name-of !nfa ;
-: !prev-of !lfa ;
-: !data-of !dfa ;
-: !beh-of  !cfa ;
-: !icode-of !ifa ;
+ code !mfa
+       (let* ((w   sp@+)
+              (val sp@+))
+          (setf (mempos-of w) val)) }
+
+: !name-of    !nfa ;
+: !prev-of    !lfa ;
+: !data-of    !dfa ;
+: !beh-of     !cfa ;
+: !icode-of   !ifa ;
+: !mempos-of  !mfa ;
 
 ;; --------------------------------------------
 ;; Dictionary Management
@@ -287,16 +297,7 @@ code next-word-this-line
 ;; --------------------------------------------
 
  code dict-index
-   (sp-! (fill-pointer *dict*)) }
-
- code dict-entry
-   (let ((ix  sp@+))
-      (sp-!  (aref *dict* ix))) }
-
- code dict-pos
-   (let* ((wp sp@+)
-         (pos (position wp *dict*)))
-     (sp-! pos)) }
+   (sp-! *mempos*) }
 
  code (forgetter)
     (forgetter sp@+)) }
@@ -307,7 +308,7 @@ code next-word-this-line
      dict-index current @ 2vec ;
 
  : restore-dict ( vec -- )
-     dup fst dict-entry (forgetter)
+     dup fst (forgetter)
      snd context ! definitions ;
 
  ;; --------------------------------------------
@@ -348,7 +349,7 @@ code next-word-this-line
  : empty
       gilded-state @
       ?dup-if [compile] FORTH definitions
-              dict-entry (forgetter)
+              (forgetter)
       then ;
 
  : ungild
@@ -362,13 +363,13 @@ code next-word-this-line
      ;; at or beneath the GILD point, or else W's ancestor vocabulary
      ;; that resides in the main Forth trunk is at or beneath the GILD
      ;; point.
-     dict-pos gilded-state @ ?dup if < else 2drop nil then ;  
+     mempos-of gilded-state @ ?dup if < else 2drop nil then ;  
      
  : .name   @nfa . ;
 
  : (forget)   ( w -- )
      dup protected? if ." No, " .name error" is protected" then
-     (forgetter) ;
+     mempos-of (forgetter) ;
      
  : forget
      bl-word find

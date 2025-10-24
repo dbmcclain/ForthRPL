@@ -68,12 +68,16 @@
 (defmacro icode-of (w)
   `(fw-ifa ,w))
 
+(defmacro mempos-of (w)
+  `(fw-mfa ,w))
+
 ;; -----------------------------------------------------
 ;; All dictionary entries are NAMED-LINKED-MIXIN
 
 (defclass named-linked-mixin ()
   ((nfa   :accessor  fw-nfa   :initarg :nfa)
-   (lfa   :accessor  fw-lfa   :initarg :lfa))
+   (lfa   :accessor  fw-lfa   :initarg :lfa)
+   (mfa   :accessor  fw-mfa   :initarg :mfa))
   (:default-initargs
    :nfa  "<ANON>"
    :lfa  nil
@@ -95,22 +99,21 @@
 #+:LISPWORKS
 (editor:setup-indent "dolinks" 1)
 
-(defun find-entry-if (hd test)
-  (dolinks (entry hd)
-    (when (funcall test entry)
-      (return-from find-entry-if entry))))
-
 (defgeneric find-entry (hd obj)
   (:method ((hd null) obj)
    nil)
+  (:method ((hd named-linked-mixin) (obj function))
+   (dolinks (entry hd)
+     (when (funcall obj entry)
+       (return-from find-entry entry))))
   (:method ((hd named-linked-mixin) (obj named-linked-mixin))
-   (find-entry-if hd (um:curry #'eq obj)))
+   (find-entry hd (um:curry #'eq obj)))
   (:method ((hd named-linked-mixin) (obj symbol))
    (find-entry hd (string obj)))
   (:method ((hd named-linked-mixin) (obj string))
-   (find-entry-if hd (lambda (entry)
-                       (string-equal obj (string (name-of entry))))
-                  )))
+   (find-entry hd (lambda (entry)
+                    (string-equal obj (string (name-of entry))))
+               )))
 
 ;; --------------------------------------------
   
@@ -729,13 +732,11 @@
 ;; ----------------------------------------------------
 ;; defining words
 
-(defvar *dict*)
+(defvar *mempos*)
 (defvar *vocabs*)
 
 (defun init-dict ()
-  (setf *dict* (make-array 512
-                           :adjustable   t
-                           :fill-pointer 0)
+  (setf *mempos* 0
         *vocabs* nil))
 
 (defun last-def ()
@@ -743,7 +744,6 @@
 
 (defun link (w)
   (format t "Defining: ~A~&" (name-of w))
-  (vector-push-extend w *dict*)
   (setf (latest-in-voc (current-voc)) w))
 
 (defun immediate ()
@@ -757,6 +757,8 @@
   (link (apply #'derive-word parent parms)))
 
 (defmethod initialize-instance :after ((obj named-linked-mixin) &key &allow-other-keys)
+  (setf (mempos-of obj) *mempos*)
+  (incf *mempos*)
   (when (current-voc)
     (setf (prev-of obj) (last-def))))
 
@@ -1546,52 +1548,21 @@
 
 ;; --------------------------------------------
 
-(defun forgetter (wp)
-  (let* ((pos  (position wp *dict*))
-         (wrds (coerce (subseq *dict* pos) 'list)))
-    ;;
-    ;; The *DICT* is a chronologically ordered vector of verbs. We
-    ;; trim from most recent verbs back to earlier entries.
-    ;;
-    ;; If any vocabularies are among the discarded words,
-    ;; we can toss them out of the *VOCABS* list.
-    ;;
-    (setf *vocabs* (remove-if (um:rcurry #'find wrds) *vocabs*))
-
-    ;; Next, for each remaining vocabulary, we check to find the first
-    ;; word among the discards that is held in that vocabulary. If we
-    ;; find one, then we know that all later words in that same
-    ;; vocabulary are going to be discarded too.
-    ;;
-    ;; And that goes for later words, in the same vocabulary, among
-    ;; the discards too. So we might as well trim them away from the
-    ;; discards list.
-    ;;
-    (nlet iter ((vocs *vocabs*)
-                (wrds wrds))
-      (when (and vocs wrds)
-        (let* ((voc   (car vocs))
-               (tl    (cdr vocs))
-               ;; (vwrds (defs-of-voc voc))
-               ;; (test  (um:rcurry #'member vwrds))
-               (vwrds  (latest-in-voc voc))
-               (test   (um:curry #'find-entry vwrds))
-               (xwrds  (some test wrds)))
-          (cond (xwrds
-                 ;; (setf (defs-of-voc voc) (cdr xwrds))
-                 (setf (latest-in-voc voc) (prev-of xwrds))
-                 (go-iter tl (remove-if test wrds)))
-                (t
-                 (go-iter tl wrds))
-                ))))
-    ;; NIL out the deleted slots for GC
-    (fill *dict* nil :start pos)
-    (setf (fill-pointer *dict*) pos)
-    (unless (find (current-voc) *vocabs*)
-      (setf (current-voc) *tic-forth*))
-    (unless (find (context-voc) *vocabs*)
-      (setf (context-voc) *tic-forth*))
-    ))
+(defun forgetter (pos)
+  (setf *mempos* pos
+        *vocabs* (remove-if (um:rcurry #'>= pos) *vocabs*
+                            :key #'fw-mfa))
+  (dolist (voc *vocabs*)
+    (let ((entry (find-entry (latest-in-voc voc)
+                             (lambda (entry)
+                               (< (mempos-of entry) pos)
+                               ))))
+      (when entry
+        (setf (latest-in-voc voc) entry))))
+  (unless (find (current-voc) *vocabs*)
+    (setf (current-voc) *tic-forth*))
+  (unless (find (context-voc) *vocabs*)
+    (setf (context-voc) *tic-forth*)))
 
 (defun voc-of-wrd (wp)
   (dolist (voc *vocabs*)
