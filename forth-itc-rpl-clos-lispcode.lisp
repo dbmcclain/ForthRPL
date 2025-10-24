@@ -69,6 +69,7 @@
   `(fw-ifa ,w))
 
 ;; -----------------------------------------------------
+;; All dictionary entries are NAMED-LINKED-MIXIN
 
 (defclass named-linked-mixin ()
   ((nfa   :accessor  fw-nfa   :initarg :nfa)
@@ -77,29 +78,6 @@
    :nfa  "<ANON>"
    :lfa  nil
    ))
-
-(defgeneric find-entry-eq (wphd obj)
-  (:method ((wphd null) obj)
-   nil)
-  (:method ((wphd named-linked-mixin) obj)
-   (um:nlet iter ((hd  wphd))
-     (when hd
-       (when (eq obj hd)
-         (return-from find-entry-eq obj))
-       (go-iter (prev-of hd))))
-   ))
-
-(defgeneric find-entry-by-name (wphd name)
-  (:method ((wphd null) name)
-   nil)
-  (:method ((wphd named-linked-mixin) name)
-   (let ((sname (string name)))
-     (um:nlet iter ((hd wphd))
-       (when hd
-         (when (string-equal sname (string (name-of hd)))
-           (return-from find-entry-by-name hd))
-         (go-iter (prev-of hd))))
-     )))
 
 (defgeneric %dolinks (wphd fn)
   (:method ((wphd null) fn)
@@ -116,6 +94,23 @@
 
 #+:LISPWORKS
 (editor:setup-indent "dolinks" 1)
+
+(defun find-entry-if (hd test)
+  (dolinks (entry hd)
+    (when (funcall test entry)
+      (return-from find-entry-if entry))))
+
+(defgeneric find-entry (hd obj)
+  (:method ((hd null) obj)
+   nil)
+  (:method ((hd named-linked-mixin) (obj named-linked-mixin))
+   (find-entry-if hd (um:curry #'eq obj)))
+  (:method ((hd named-linked-mixin) (obj symbol))
+   (find-entry hd (string obj)))
+  (:method ((hd named-linked-mixin) (obj string))
+   (find-entry-if hd (lambda (entry)
+                       (string-equal obj (string (name-of entry))))
+                  )))
 
 ;; --------------------------------------------
   
@@ -489,7 +484,7 @@
   (when-let (name (ignore-errors (string w))) ;; e.g., fails on numbers
     (nlet iter ((voc voc))
       (when voc
-        (or (find-entry-by-name (latest-in-voc voc) name)
+        (or (find-entry (latest-in-voc voc) name)
             (go-iter (@fcell (data-of voc) 1)))
         ))
     ))
@@ -1697,7 +1692,7 @@
                ;; (vwrds (defs-of-voc voc))
                ;; (test  (um:rcurry #'member vwrds))
                (vwrds  (latest-in-voc voc))
-               (test   (um:curry #'find-entry-eq vwrds))
+               (test   (um:curry #'find-entry vwrds))
                (xwrds  (some test wrds)))
           (cond (xwrds
                  ;; (setf (defs-of-voc voc) (cdr xwrds))
@@ -1723,7 +1718,7 @@
 |#
 (defun voc-of-wrd (wp)
   (dolist (voc *vocabs*)
-    (when (find-entry-eq (latest-in-voc voc) wp)
+    (when (find-entry (latest-in-voc voc) wp)
       (return-from voc-of-wrd voc))))
 
 ;; -------------------------------------------------
