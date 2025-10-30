@@ -325,11 +325,14 @@ code !vocabs
    r> drop ;
 
 : trim-vocs
+    ;; Remove any vocabularies that were established after the word we are fogetting.
     dup !dict-index
     <r << vocabs 
-      begin pop 
+      begin pop   ;; Take apart the VOCABS list and rebuild it sans the treetops.
       ?dup-while dup @vfa i < 
-               if swap 
+               if swap  ;; Keep this one. 
+	          ;; When you find an extant vocabulary (not beyond the point)
+	          ;; then trim it back to below the forget point.
                   over i trim-words-in-voc
                else
                   drop 
