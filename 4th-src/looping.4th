@@ -154,42 +154,6 @@
  code leave
    (setf rnos rtos) }
    
- ;; CASE Statement -----------------------------------------------------
-
- : (case)
-     r>     ;; x a
-     begin
-       s:aab      ;; x x a
-       pop        ;; x x [cdr a] [car a]
-       dup        ;; x x [cdr a] [car a] [car a]
-    while
-       s:bac      ;; x [cdr a] x [car a]
-       execute    ;; x [cdr a] t/f
-       if
-          swap-drop      ;; [cdr a]
-          pop  swap      ;; [car [cdr a]] [cdr [cdr a]]
-          begin
-            pop
-          while
-            pop drop
-          repeat
-          <r
-          execute
-          exit
-       else
-          pop drop
-       then
-     repeat
-     drop <r 2drop ;
-
- "OpenCase" constant OpenCase
- 
- : case  OpenCASE compile (case) ; immediate
- 
- : esac  drop code{ (forth-compile-in nil) } ; immediate
- 
- : otherwise  drop t ;
-
  ;; code replacement --------------------------------------------------
 
 code patch
@@ -214,4 +178,3 @@ code patch-behavior
    else ' code{ (to-oper tos nos)
                 (setf sp  (cddr sp)) }
    then ; immediate
-

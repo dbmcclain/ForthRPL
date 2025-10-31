@@ -16,14 +16,14 @@
 
 ;; --------------------------------------------
 
+: ?>  over = not if nil then jmp maybe? ;
 : .base
        base
-       case { #10r16 =  } { ." Hex"     }
-            { #10r10 =  } { ." Decimal" }
-            { #10r8  =  } { ." Octal"   }
-            { #10r2  =  } { ." Binary"  }
-            otherwise     { base >base< decimal . }
-       esac ;
+	{ #10r16 ?> ." Hex"     }
+	{ #10r10 ?> ." Decimal" }
+	{ #10r8  ?> ." Octal"   }
+	{ #10r2  ?> ." Binary"  }
+	( or) dup >base< decimal ." 10r" . ; 
 
 : verify-stack-empty
      depth 0/= if cr .s error"   Something is dirty..." then ;
