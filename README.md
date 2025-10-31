@@ -30,6 +30,8 @@ _[SICP, the most wonderful book about programming, introduces the Stack Machine 
 
 Writing good code in Forth requires substantial thought. I am most proficient in Lisp, and I can be massively productive with it. I cannot duplicate that productivity using Forth, even though I spent the better part of 20 years writing Forth. I can more easily read S-Expressions in Lisp, than I can read threaded code in Forth. And thinking about the most efficient, or most terse, statement of an algorithm in Forth takes 10x longer than in Lisp, for me. But going through the exercise in Forth, at least partway, imparts an appreciation and new insights about computer programming that I don't get from the insular environment provided by my Lisp system. 
 
+The term "Good Forth Code" arises frequently. It denotes code that is rarely more than one or two lines for each verb. Huge mega-blocks of code, as one often finds in Lisp/Scheme, are "bad style" in Forth. Trying to achieve "Good Code" is where you really have to think hard.
+
 So both Forth and Lisp could be called LFSP's, but they each have very different arenas of applicability.
 
 Where Lisp and Scheme have automatic memory management and functional closures on offer, Forth has Return Stack manipulation, a zero address (stack) architecture, and interactive Assembly programming on offer. Forth, like Lisp and Scheme, is fully extensible. You can create and add new language features as you need them. And, in each of these languages, you have the full power of the language for use in developing and operating these language extensions.
