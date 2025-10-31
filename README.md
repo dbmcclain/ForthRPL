@@ -13,7 +13,7 @@ To use, just (ASDF :FORTHRPL) and then type (INTERACTIVE). Now you are in Forth 
 
 Forth does have its uses...
 
-# Why use this dead language?
+# Why use this (dead?) language?
 Forth rose to prominence during a time of rapid scientific progress and when the mini-computers of the time had relatively limited memory resources. You could pack an entire major telescope control system, all the astronomical calculations for the star catalog (precession, nutation, aberration), perform equatorial to alt-az conversions, control the dome, and control an observing instrument attached to the back of the giant telescope, and collect and record and analyze data. All of this in less than 30 kWords (16-bit words) of Core Memory.
 
 Today is a very different story. We have monster machines, in comparison, sitting on our desktops, or even in the palms of our hands. They are almost all 64-bit machines. Back in the day, only gigantic IBM Mainframes had that bus width, but none of the mainframes had anywhere near as much memory as you can now fit on a card smaller than a fingernail. And the speed of machines today? At the (then) world's largest telescope, in 1979, we had a DG Nova-800 minicomputer with 32 kWords of core memory, running the entire telescope and observatory. It was given model designation Nova-800 because it had an astounding 800 ns Read-Modify-Write cycle time - beating out the previous generation Nova-1200.
