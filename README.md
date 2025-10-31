@@ -26,6 +26,6 @@ Writing good code in Forth requires substantial thinking. I am most proficient i
 
 So both Forth and Lisp could be called LFSP's, but they each have very different arenas of applicability.
 
-Where Lisp and Scheme have functional closures on offer, Forth has Return Stack manipulation, a zero address (stack) architecture, and interactive Assembly programming on offer.
+Where Lisp and Scheme have automatic memory management and functional closures on offer, Forth has Return Stack manipulation, a zero address (stack) architecture, and interactive Assembly programming on offer.
 
 In this ForthRPL system, our Assembly language is Lisp. That's quite a powerful inversion!
