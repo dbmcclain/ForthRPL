@@ -34,6 +34,6 @@ The term _"Good Forth Code"_ arises frequently. It connotes code that is rarely 
 
 So both Forth and Lisp could be called LFSP's, but they each have very different arenas of applicability.
 
-Where Lisp and Scheme have automatic memory management and functional closures on offer, Forth has Return Stack manipulation, a zero address (stack) architecture, and interactive Assembly programming on offer. Forth, like Lisp and Scheme, is fully extensible. You can create and add new language features as you need them. And, in each of these languages, you have the full power of the language for use in developing and operating these language extensions.
+Where Lisp and Scheme have automatic memory management and functional closures on offer, Forth has Return Stack manipulation, a zero address (stack) architecture, and interactive Assembly programming on offer. Forth, like Lisp and Scheme, is fully extensible. You can create and add new language features as you need them. And, in each of these languages, you have the full power of the language for use in constructing these language extensions.
 
 In this ForthRPL system, our Assembly language is Lisp. That's quite a powerful inversion!
