@@ -1,38 +1,57 @@
 ;; --------------------------------------------
 ;; Proper Comments & Conditional Compilation
 
- : #| ; immediate
- : skip-to-fi ;
+-- Flow Control -----------------------------
+
+code rdrop    (pop *rstack*) }  ;; we shall return to *Your* caller, instead of to you.
+: maybe?      if r> continuation then rdrop ;
+
+-- TCO --------------------------------------------
+
+code (jmp)
+  (!ip ip@+) }
+' (jmp) mark-skip
+
+code @cfa
+    (setf tos (beh-of tos)) }
+
+code @ifa
+    (setf tos (icode-of tos)) }
+
+: known-colon ;
+' known-colon @cfa constant colon-beh
+
+: jmp  ' dup @cfa colon-beh 
+	eq if compile (jmp) @ifa then , ; immediate
+
+-- Generalized Comments Recognizer ---------------
+
+: skipper ;
+: stest  over string= dup if drop then ;
+: ?>     stest jmp maybe? ;
+: skip-to-word  ( word-delim -- )
+       begin
+          bl-word over stest
+       not while
+	  skipper
+       repeat drop ;
+ : #|          "|#"  skip-to-word ; immediate
+ : skip-to-fi  "FI#" skip-to-word ;
  : skip-quote  #\" word drop ;
- : skipper     
-     case { "#|"      string= } { [compile] #|  }  ;; |# |#
-          { ";;"      string= } { [compile] ;;  }
-          { ";;;"     string= } { [compile] ;;; }
-          { "--"      string= } { [compile] --  }
-          { "("       string= } { [compile] (   }
-          { "#+IF"    string= } { skip-to-fi    }
-          { "#-IF"    string= } { skip-to-fi    }
-          { "\""      string= } { skip-quote    }
-          { ".\""     string= } { skip-quote    }
-          { "error\"" string= } { skip-quote    }
-      esac ;
 
- { begin bl-word dup
-     case { "|#" string= } { drop r> r> 2drop }
-          otherwise        { dup skipper      }
-     esac
-     drop
-   again }
-' #| patch
-
-
- { begin bl-word dup
-     case { "FI#" string= } { drop r> r> 2drop }
-          otherwise         { dup skipper      }
-     esac
-     drop
-   again }
-' skip-to-fi patch
+{ { "#|"      ?> [compile] #|  }
+  { ";;"      ?> [compile] ;;  }
+  { ";;;"     ?> [compile] ;;; }
+  { "--"      ?> [compile] --  }	
+  { "("       ?> [compile] (   }
+  { "#+IF"    ?> skip-to-fi    }
+  { "#-IF"    ?> skip-to-fi    }
+  { "\""      ?> skip-quote    }
+  { ".\""     ?> skip-quote    }
+  { "s\""     ?> skip-quote    }
+  { "error\"" ?> skip-quote    }
+  drop }
+' skipper patch
 
 
  code feature?

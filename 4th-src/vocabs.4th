@@ -31,11 +31,13 @@
  code @dfa ;; as in: ' wwww @dfa
     (setf tos (data-of tos)) }
 
+#| ;; already defined earlier
  code @cfa
     (setf tos (beh-of tos)) }
-   
+
  code @ifa
     (setf tos (icode-of tos)) }
+|#   
 
   code @vfa
     (setf tos (mempos-of tos)) }
@@ -310,19 +312,19 @@ code vocabs
 code !vocabs
   (setf *vocabs* sp@+) }
 
-: trim-words-in-voc
+: trim-words-in-voc  ( voc height -- )
    <r @dfa dup fst
    begin 
       dup 
    while
       dup @vfa i < 
 	if swap !fst
-          r> drop exit 
+          rdrop exit 
         then
       @lfa
    repeat
    swap !fst
-   r> drop ;
+   rdrop ;
 
 : trim-vocs
     ;; Remove any vocabularies that were established after the word we are fogetting.
@@ -338,7 +340,7 @@ code !vocabs
                   drop 
                then
       repeat 
-      drop r> drop 
+      drop rdrop 
       >> !vocabs ;
 
 ;; --------------------------------------------
