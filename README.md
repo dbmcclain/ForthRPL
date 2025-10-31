@@ -1,7 +1,7 @@
 # ForthRPL
 A Forth (RPL) System like you have never seen... 
 
-Written entirely in Lisp, using Lisp as its "Assembly Language" - means that memory is infinite, and you can do absolutely anything and everything.
+Written entirely in Lisp, using Lisp as its _"Assembly Language"_ - means that memory is infinite, and you can do absolutely anything and everything.
 
 This system was developed back around 2010 and served as our means for distributing an audio processing algorithm while it was under trade secret protection during the waiting period until a US Patent was awarded. 
 
