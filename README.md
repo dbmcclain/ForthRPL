@@ -20,7 +20,7 @@ Today is a very different story. We have monster machines, in comparison, sittin
 
 But with Forth you have essentially a very high-level Assembler language, and you can drop, interactively, all the way down to machine Assembly level at any time. That is kind of a blast to do from time to time. But to write code that is inherently reentrant in the face of timesliced multi-threading on a multi-core CPU, would be a painful chore to write in Forth. Since Forth is Turing Complete you can certainly write anything. But the pain of the process would become unbearable.
 
-So why write Forth today? Because it teaches things about computer programming, much like Lisp and Scheme broaden your horizons. Forth is the only language that allows you to play with the Return Stack as readily as with the Data Stack. And it promotes a kind of threading simplification of code that is only possible using advance control flow techniques that involve manipulating the contents of the Return Stack.
+So why write Forth today? Because it teaches things about computer programming, much like Lisp and Scheme broaden your horizons. Forth is the only language that allows you to play with the Return Stack as readily as with the Data Stack. And it promotes a kind of threading simplification of code that is only possible using advanced control flow techniques that involve manipulating the contents of the Return Stack.
 
 Where Lisp and Scheme have functional closures on offer, Forth has Return Stack manipulation, a zero address (stack) architecture, and interactive Assembly programming on offer.
 
