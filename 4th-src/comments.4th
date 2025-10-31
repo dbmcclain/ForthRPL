@@ -39,6 +39,11 @@ code @ifa
  : skip-to-fi  "FI#" skip-to-word ;
  : skip-quote  #\" word drop ;
 
+;; MAYBE? evaluates each sub-block in sequence until it finds a non-null
+;; result from the test. At that point, it performs the continuation (to 
+;; the right of ?>) and then exits the entire block, back to the caller
+;; of SKIPPER.
+
 { { "#|"      ?> [compile] #|  }
   { ";;"      ?> [compile] ;;  }
   { ";;;"     ?> [compile] ;;; }
