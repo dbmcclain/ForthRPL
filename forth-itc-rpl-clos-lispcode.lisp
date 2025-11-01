@@ -130,6 +130,20 @@
    :has-data? nil
    ))
 
+(defgeneric ensure-compiled-function (fn)
+  (:method ((fn symbol))
+   (ensure-compiled-function (symbol-function fn)))
+  (:method ((fn function))
+   #+:LISPWORKS
+   (if (sys:compiled-code-p fn)
+       fn
+     (compile nil fn))
+   #-:LISPWORKS
+   fn))
+  
+(defmethod initialize-instance :after ((obj <code-def>) &key &allow-other-keys)
+  (setf (fw-cfa obj) (ensure-compiled-function (fw-cfa obj))))
+
 (defun no-behavior (self)
   (error "No behavior: ~A" (name-of self)))
 
@@ -660,6 +674,15 @@
   (with-users-base
    (format t "~vT~A" (length *rstack*) (name-of reg-w))))
 
+#+:LISPWORKS
+(defun execute-word (reg-w)
+  (let ((fn  (beh-of reg-w)))
+    #+nil
+    (unless (sys:compiled-code-p fn)
+      (break))
+    (funcall fn reg-w)))
+
+#-:LISPWORKS
 (defun execute-word (reg-w)
   (funcall (beh-of reg-w) reg-w))
 
@@ -729,6 +752,9 @@
   (destructuring-bind (lvl pos)
       (data-of self)
     (sp-! (aref (nth lvl *frstack*) pos))))
+
+(defun do-dynvar (self)
+  (sp-! (lookup-dynvar self)))
 
 ;; ----------------------------------------------------
 ;; defining words
@@ -896,9 +922,6 @@
    :dfa       nil
    :cfa       'do-dynvar
    ))
-
-(defun do-dynvar (self)
-  (sp-! (lookup-dynvar self)))
 
 (defun lookup-dynvar (self)
   ;; return the list of bindings - the top one is the currently active
@@ -1574,6 +1597,9 @@
     (set-macro-character #\] nil)
     (set-macro-character #\} nil)
     (init-dict)
+    ;; #+:LISPWORKS
+    ;; (hcl:compile-file-if-needed *the-forth-kernel* :load t)
+    ;; #-:LISPWORKS
     (load *the-forth-kernel*)))
 
 ;; ----------------------------------------------------------

@@ -33,9 +33,9 @@
     (setf tos
           (derive-word '<scode-def>
                        :cfa (lambda (self)
-                              (doval self)
-                              (funcall behav self))
-                       :dfa tos)
+                            	(doval self)
+                                (funcall behav self))
+                       :dfa tos)	
           ip  rp@+
           )) }
 

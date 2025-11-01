@@ -51,7 +51,7 @@ Example:
 code :->;:  ;; ( pend-: nlocals -- pend-;: )
    (let ((nel  sp@+))
      (change-class tos '<scolon-def>
-                   :cfa       'doscol
+                   :cfa       (ensure-compiled-function 'doscol)
                    :dfa       nel
                    :verb-type ";:"
                    )) }
