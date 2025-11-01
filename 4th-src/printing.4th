@@ -23,7 +23,7 @@
 	{ #10r10 ?> ." Decimal" }
 	{ #10r8  ?> ." Octal"   }
 	{ #10r2  ?> ." Binary"  }
-	( or) dup >base< decimal ." 10r" . ; 
+	( or) >base< decimal ." 10r" . ; 
 
 : verify-stack-empty
      depth 0/= if cr .s error"   Something is dirty..." then ;
