@@ -1,5 +1,9 @@
  ;; print- and read- base -------------------------------------------
 
+  code .
+   (with-users-base
+    (princ sp@+)) }
+
  : !base   => base ;
  : decimal #10r10 !base ;
  : hex     #10r16 !base ;

@@ -130,17 +130,25 @@
    :has-data? nil
    ))
 
+#+:LISPWORKS
 (defgeneric ensure-compiled-function (fn)
   (:method ((fn symbol))
-   (ensure-compiled-function (symbol-function fn)))
+   (when (fboundp fn)
+     (let ((sfn  (symbol-function fn)))
+       (if (sys:compiled-code-p sfn)
+           sfn
+         (setf (symbol-function fn) (ensure-compiled-function sfn)))
+       )))
   (:method ((fn function))
-   #+:LISPWORKS
    (if (sys:compiled-code-p fn)
        fn
-     (compile nil fn))
-   #-:LISPWORKS
-   fn))
-  
+     (compile nil fn))))
+
+#-:LISPWORKS
+(defun ensure-compiled-function (f)
+  f)
+
+#+:LISPWORKS
 (defmethod initialize-instance :after ((obj <code-def>) &key &allow-other-keys)
   (setf (fw-cfa obj) (ensure-compiled-function (fw-cfa obj))))
 
@@ -1597,9 +1605,11 @@
     (set-macro-character #\] nil)
     (set-macro-character #\} nil)
     (init-dict)
-    ;; #+:LISPWORKS
-    ;; (hcl:compile-file-if-needed *the-forth-kernel* :load t)
-    ;; #-:LISPWORKS
+    #|
+    #+:LISPWORKS
+    (hcl:compile-file-if-needed *the-forth-kernel* :load t)
+    #-:LISPWORKS
+    |#
     (load *the-forth-kernel*)))
 
 ;; ----------------------------------------------------------

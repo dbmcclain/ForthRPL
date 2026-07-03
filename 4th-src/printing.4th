@@ -1,6 +1,6 @@
 ;; --------------------------------------------------------------
 
- : spaces    0 do space loop ;
+: spaces    0 do space loop ;
 
  : "  #\" word
      compiling @ if compile literal , then ; immediate
@@ -37,3 +37,6 @@
    base tstvar 2 ->lst . cr
    if error" Wjat!!" then ;
 
+;; --------------------------------------------
+
+: .x  >base< hex . ;

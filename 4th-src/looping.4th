@@ -77,6 +77,7 @@
  : then      compile-cnop here swap backpatch ; immediate
  : else      compile (br) compile-nop here swap [compile] then ; immediate
  : ?dup-if   compile (?dup-if) compile-nop here ; immediate
+ : ;else     compile exit [compile] then ; immediate  -- for "IF xxx ;ELSE yyy ;" then-less programming
  
   ;; begin .. while .. repeat
   ;; begin .. until .. repeat

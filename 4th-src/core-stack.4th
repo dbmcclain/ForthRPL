@@ -211,10 +211,6 @@
            (loc  sp@+))
       (setf (@fcell loc) val)) }
 
- code .
-   (with-users-base
-    (princ sp@+)) }
-
  : s:abc  ;
  : s:acb  swap ;
  : s:bca  rot ;

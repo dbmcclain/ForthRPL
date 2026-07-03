@@ -305,12 +305,12 @@
 
 (colon !compiling
        compiling ! )
-       
+
 (colon [
        nil !compiling )
 (immediate)
 
-(colon ]
+(colon "]"   ;; quoted form demande by SBCL
        t !compiling )
 
 (colon set-current-context
@@ -319,10 +319,10 @@
 (colon {
        push-compile-context
        create-{
-       set-current-context ] )
+       set-current-context "]" )  ;; quoted form demanded by SBCL
 (immediate)
 
-(colon }
+(colon "}"   ;; quoted form demande by SBCL
         compile exit
         [  import-icode
         set-current-context
