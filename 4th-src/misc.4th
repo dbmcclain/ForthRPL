@@ -3,18 +3,18 @@
 ':LISPWORKS feature? #+IF
 
 code cwd
-   (sp-! (hcl:get-working-directory)) }
+   (spush (hcl:get-working-directory)) }
 
 : pwd  cwd . ;
 
 code cd
-   (let ((path sp@+))
+   (let ((path spop))
      (if path
          (eval `(hcl:cd ,path))
        (hcl:cd))) }
 
 code system
-  (sys:call-system-showing-output sp@+) }
+  (sys:call-system-showing-output spop) }
 
 : ls  " ls -lF" system ;
    
@@ -24,15 +24,15 @@ FI#
 ;; Actors
 
 code send   ;; ( msg-lst targ -- )
-  (let* ((targ sp@+)
-         (msg  sp@+))
+  (let* ((targ spop)
+         (msg  spop))
     (ac:send* targ msg)) }
 
 code println
-  (sp-! ac:println) }
+  (spush ac:println) }
 
 code writeln
-  (sp-! ac:writeln) }
+  (spush ac:writeln) }
 
 << " Hello from ForthRPL!!" >>lst println send
 

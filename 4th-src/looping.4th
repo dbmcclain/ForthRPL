@@ -3,20 +3,20 @@
 
  code mark-skip
    #+:LISPWORKS
-   (sys:atomic-push sp@+ *skip-words*)
+   (sys:atomic-push spop *skip-words*)
    #-:LISPWORKS
-   (push sp@+ *skip-words*) }
+   (push spop *skip-words*) }
  
  code here 
-	(sp-! (arena-last-pos %cur-icode%)) }
+	(spush (arena-last-pos %cur-icode%)) }
 
  code backpatch
-  (let* ((location  sp@+)
-         (addr      sp@+))
+  (let* ((location  spop)
+         (addr      spop))
     (setf (car location) addr)) }
 
  code (br)
-  (!ip ip@) }
+  (lea ip (@ ip ]) ) }
  ' (br) mark-skip
 
  ;; begin .. end
@@ -28,42 +28,42 @@
  ;; conditionals ------------------------------------------------------
 
  code (ift)
-  (let ((tclause ip@+))
-    (when sp@+
+  (let ((tclause (@ ip ]+)))
+    (when spop
        (execute-word tclause))) }
 
  code (ifnt)
-  (let ((tclause ip@+))
-    (unless sp@+
+  (let ((tclause (@ ip ]+)))
+    (unless spop
         (execute-word tclause))) }
 
  code (ifte)
-  (let* ((tclause  ip@+)
-         (fclause  ip@+))
-    (execute-word (if sp@+ tclause fclause)) ) }
+  (let* ((tclause  (@ ip ]+))
+         (fclause  (@ ip ]+)))
+    (execute-word (if spop tclause fclause)) ) }
 
  : ift       compile (ift) ; immediate
  : ifte      compile (ifte) ; immediate
  : ifnt      compile (ifnt) ; immediate
  
  code (if)
-  (if sp@+
-      ip@+
-    (!ip ip@)) }
+  (if spop
+      (@ ip ]+)
+    (lea ip (@ ip ]))) }
  ' (if) mark-skip
 
  code (ifnot)
-  (if sp@+
-      (!ip ip@)
-    ip@+) }
+  (if spop
+      (lea ip (@ ip ]))
+    (@ ip ]+)) }
  ' (ifnot) mark-skip
 
  code (?dup-if)
    (if tos
-       ip@+
+       (@ ip ]+)
      (progn
-       sp@+
-       (!ip ip@))) }
+       spop
+       (lea ip (@ ip ]) ))) }
 ' (?dup-if) mark-skip
 
  code nop }
@@ -89,62 +89,61 @@
  ;; recursion --------------------------------------------------
  
  code cur-word
-   (sp-!  %cur-def%) }
+   (spush  %cur-def%) }
  
  : recurse  cur-word , ; immediate
 
  : fact     dup 0= if drop 1 else dup 1- recurse * then ;
 
  code tail
-   (setf ip (icode-of ip@)) }
+   (lea ip (icode-of (@ ip ]))) }
 
  : tfact    1 swap { dup 0= if drop else swap over * swap 1- tail recurse then } ;
    
  ;; do-loops ----------------------------------------------------
 
  code (do)
-  (let* ((ix    sp@+)
-         (limit sp@+))
+  (let* ((ix    spop)
+         (limit spop))
     (if (= ix limit)
-        (!ip ip@)
+        (lea ip (@ ip ]) )
       (progn
-        (rp-! limit)
-        (rp-! ix)
-        ip@+))
-    ) }
+        (rpush limit)
+        (rpush ix) 
+        (@ ip ]+)))) }
  ' (do) mark-skip
 
  code (loop)
-  (let ((ix (1+ rp@)))
+  (let ((ix (1+ rtos)))
     (if (< ix (cadr rp))
         (progn
-          (setf rp@ ix)
-          (!ip ip@))
+          (!rtos ix)
+          (lea ip (@ ip ]) ))
       (progn
-        (!rp (cddr rp))
-        ip@+)
+        (lea rp (cddr rp))
+        (@ ip ]+))
       )) }
  ' (loop) mark-skip
 
  code (+loop)
-  (let* ((incr sp@+)
-         (ix   (+ incr rp@)))
+  (let* ((incr spop)
+         (ix   (+ incr rtos)))
     (if (minusp incr)
         (if (>= ix (cadr rp))
             (progn
-              (setf rp@ ix)
-              (!ip ip@))
+              (!rtos ix)
+              (lea ip (@ ip ]) ))
           (progn
-            (!rp (cddr rp))
-            ip@+))
+            (lea rp (cddr rp))
+            (@ ip ]+)))
 
       (if (< ix (cadr rp))
           (progn
-            (setf rp@ ix)
-            (!ip ip@))
+            (!rtos ix)
+            (lea ip (@ ip ]) ))
         (progn
-          (!rp (cddr rp))
-          ip@+)))
+          (lea rp (cddr rp))
+          (@ ip ]+))))
     ) }
  ' (+loop) mark-skip
 
@@ -153,20 +152,20 @@
  : +loop  compile (+loop) , [compile] then ; immediate
 
  code leave
-   (setf rnos rtos) }
+   (!rnos rtos) }
    
  ;; code replacement --------------------------------------------------
 
 code patch
   ;; very un-Forth-like
-  (let* ((wd    sp@+)
-         (icode sp@+))
+  (let* ((wd    spop)
+         (icode spop))
     (setf (icode-of wd) (icode-of icode))) }
 
 code patch-behavior
    ;; ... just because we can...
-   (let* ((wd    sp@+)
-          (ccode sp@+))
+   (let* ((wd    spop)
+          (ccode spop))
      (setf (beh-of wd) (beh-of ccode))) }
 
 ;; --------------------------------------------
@@ -177,5 +176,5 @@ code patch-behavior
 : =>
    compiling @ if compile =>
    else ' code{ (to-oper tos nos)
-                (setf sp  (cddr sp)) }
+                (lea sp (cddr sp)) }
    then ; immediate

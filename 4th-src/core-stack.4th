@@ -1,108 +1,118 @@
  ;; various stack manipulation verbs -----------------------------------
 
  code execute
-  (execute-word sp@+) }
+  (execute-word spop) }
 
  code (jmp)
-     (do-jmp ip@+) }
+     (do-jmp (@ ip ]+)) }
   
  code <r
-      (rp-! sp@+) }
+      (rpush spop) }
 
  code r>
-      (sp-! rp@+) }
+      (spush rpop) }
 
  code i
-      (sp-! rtos) }
+      (spush rtos) }
 
  code j
       ;; refers to the caller's "i", just above the return addr, which
       ;; itself is above our "i" and limit.
-      (sp-! (fourth rp)) }
+      (spush (fourth rp)) }
 
 ;; --------------------------------------------
 ;; Stack twiddling
 
  code over
-  (sp-! nos) }
+  (spush nos) }
 
  code swap-over
     (rotatef tos nos)
-    (sp-! nos) }
+    (spush nos) }
 
  code swap-drop
-   (let ((x  sp@+))
-     (setf tos x)) }
+   (let ((x  spop))
+     (!tos x)) }
    
  code dupnos
    (let ((a tos))
-     (setf tos nos)
-     (sp-! a)) }
+     (!tos  nos)
+     (spush a)) }
 
- code dup   (sp-! tos) }
- code roll  (!sp (let ((ct sp@+))
-                   (roll ct sp))) }
- code rot   (!sp (roll 2 sp)) }
- code -rot  (!sp (roll -2 sp)) }
+ code dup   (spush tos) }
+ code roll  (lea sp (let ((ct spop))
+                   	(roll ct sp))) }
+ code rot   (lea sp (roll 2 sp)) }
+ code -rot  (lea sp (roll -2 sp)) }
  
  code ndrop
   (let ((n tos))
-    (!sp (nthcdr (1+ n) sp))) }
+    (lea sp (nthcdr (1+ n) sp))) }
 
  code 2dup
-   (sp-! nos)
-   (sp-! nos) }
+   (spush nos)
+   (spush nos) }
 
  code 2swap
   (destructuring-bind (a b c d . rest) sp
-    (!sp (list* c d a b rest))) }
+    (lea sp (list* c d a b rest))) }
 
  code 2over
   (destructuring-bind (a b c d . rest) sp
-    (!sp (list* c d a b c d rest))) }
+    (lea sp (list* c d a b c d rest))) }
 
  code 2rot
   (destructuring-bind (a b c d e f . rest) sp
-    (!sp (list* e f a b c d rest))) }
+    (lea sp (list* e f a b c d rest))) }
 
  code -2rot
   (destructuring-bind (a b c d e f . rest) sp
-    (!sp (list* c d e f a b rest))) }
+    (lea sp (list* c d e f a b rest))) }
 
  code 2swap-over
   (destructuring-bind (a b c d . rest) sp
-    (!sp (list* a b c d a b rest))) }
+    (lea sp (list* a b c d a b rest))) }
 
  code 2drop
-  (!sp (cddr sp)) }
+  (lea sp (cddr sp)) }
 
  code depth
-  (sp-! (length sp)) }
+  (spush (length sp)) }
 
  code pick
   (let ((n tos))
-    (setf tos (nth (1+ n) sp))) }
+    (!tos (nth (1+ n) sp))) }
 
 ;; --------------------------------------------
 ;; Lists
 
  code ->lst
-  (let ((nel sp@+))
+  (let ((nel spop))
     (multiple-value-bind (hd tl)
         (um:split nel sp)
-      (!sp (cons (nreverse hd) tl))
+      (lea sp (cons (nreverse hd) tl))
       )) }
 
  code ->lst*
-  (let ((nel sp@+))
+  (let ((nel spop))
     (multiple-value-bind (hd tl)
         (um:split nel sp)
-      (!sp (cons (append (nreverse (cdr hd)) (car hd)) tl))
+      (lea sp (cons (append (nreverse (cdr hd)) (car hd)) tl))
       )) }
 
  code lst->
-   (let ((lst  sp@+))
-     (!sp (cons (length lst) (nconc (reverse lst) sp)) )) }
+   (let ((lst  spop))
+     (lea sp (cons (length lst) (nconc (reverse lst) sp)) )) }
+
+ code car 
+   (!tos (car tos)) }
+
+ code cdr
+   (!tos (cdr tos)) }
+
+ code cons
+   (let ((a  spop))
+      (!tos (cons a tos))) }
 
  : pop   ( lst -- [cdr lst] [car lst] )
     dup cdr
@@ -115,31 +125,31 @@
 ;; Vectors
 
  code ->vec
-  (let ((nel sp@+))
+  (let ((nel spop))
     (multiple-value-bind (hd tl)
         (um:split nel sp)
-      (!sp (cons (make-array nel
+      (lea sp (cons (make-array nel
                              :initial-contents (nreverse hd))
                          tl)))) }
 
  code vec->
-  (let* ((seq  sp@+)
+  (let* ((seq  spop)
          (lst  (coerce seq 'list)))
     ;; be careful here... this could also be applied to a list
     ;; in which case the (coerce seq 'list) would return the original argument
     ;; might not be safe to nreverse that original list
-    (!sp (cons (length seq) (nconc (reverse lst) sp)))) }
+    (lea sp (cons (length seq) (nconc (reverse lst) sp)))) }
 
  code copy-seq
-   (setf tos (copy-seq tos)) }
+   (!tos (copy-seq tos)) }
 
  code 1vec
-   (setf tos (vector tos)) }
+   (!tos (vector tos )) }
 
  code 2vec
-   (let* ((snd  sp@+)
+   (let* ((snd  spop)
           (fst  tos))
-     (setf tos (vector fst snd))) }
+     (!tos (vector fst snd))) }
 
 ;; --------------------------------------------
 ;; Easy construction of Vectors
@@ -160,9 +170,15 @@
          (setf  sp  tl
                 tos lst))
        )) }
+
+code l->v 
+     (!tos (coerce tos 'vector)) }
    
+code v->l
+     (!tos (coerce tos 'list)) }
+
  : >>vec
-     >>lst  code{ (setf tos (coerce tos 'vector)) } ;
+     >>lst  l->v ; 
 
  : >>  >>lst ;
  
@@ -170,9 +186,9 @@
 
  code string=
   ;; case insensitive
-  (let* ((s1 sp@+)
+  (let* ((s1 spop)
          (s2 tos))
-    (setf tos (string-equal s1 s2))) }
+    (!tos (string-equal s1 s2))) }
 
  code /mod
   (let ((d  tos)
@@ -183,34 +199,39 @@
             tos r))) }
 
  code */
-   (let* ((d  sp@+)
-          (n2 sp@+))
-     (setf tos (/ (* tos n2) d))) }
+   (let* ((d  spop)
+          (n2 spop))
+     (!tos (/ (* tos n2) d))) }
 
  code */mod
-   (let* ((d sp@+))
+   (let* ((d spop))
     (multiple-value-bind (q r)
         (truncate (* tos nos) d)
       (setf nos q
             tos r))) }
 
  code sw-
-   (let ((a  sp@+))
-     (setf tos (- a tos))) }
+   (let ((a  spop))
+     (!tos (- a tos))) }
 
  code sw/
-    (let ((a sp@+))
-      (setf tos (/ a tos))) }
+    (let ((a spop))
+      (!tos (/ a tos))) }
 
  code sw-mod
-    (let ((a sp@+))
-      (setf tos (mod a tos))) }
+    (let ((a spop))
+      (!tos (mod a tos))) }
 
  code sw!
-    (let* ((val  sp@+)
-           (loc  sp@+))
+    (let* ((val  spop)
+           (loc  spop))
       (setf (@fcell loc) val)) }
 
+;; --------------------------------------------
+;;    +--- NOS
+;;    |+-- TOS
+;;    ||
+;;    VV
  : s:abc  ;
  : s:acb  swap ;
  : s:bca  rot ;
@@ -239,5 +260,5 @@
  ;; : ?dup dup if dup then ;
  code ?dup
     (when tos
-      (sp-! tos)) }
+      (spush tos)) }
 

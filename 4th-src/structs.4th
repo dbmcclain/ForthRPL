@@ -1,23 +1,23 @@
  ;; 1-D arrays -------------------------------------------------------
 
- code allot (setf tos (make-array tos)) }
+ code allot (!tos (make-array tos)) }
 
  : array        ( n -- )
      allot constant ;
 
  code fill     ;; ( v arr -- )
-   (let* ((arr sp@+)
-          (v   sp@+))
+   (let* ((arr spop)
+          (v   spop))
      (fill arr v)) }
 
  code i@
-      (let ((ix sp@+))
-        (setf tos (@fcell tos ix))) }
+      (let ((ix spop))
+        (!tos (@fcell tos ix))) }
 
  code i!
-  (let* ((ix  sp@+)
-         (loc sp@+)
-         (val sp@+))
+  (let* ((ix  spop)
+         (loc spop)
+         (val spop))
     (setf (@fcell loc ix) val)) }
 
  : fst   ( 2vec -- obj )
@@ -35,12 +35,12 @@
  code nth-pair ;;  ( pair n -- pair )
    ;; using 2vecs as pairs (car,cdr), do the pointer chasing to find
    ;; the nth pair.
-   (let* ((n     sp@+)
+   (let* ((n     spop)
           (pair  tos))
      (when (plusp n)
        (loop repeat n do
                (setf pair (@fcell pair 1)))
-       (setf tos pair))) }
+       (!tos pair))) }
    
  ;; structs --------------------------------------------------------
 

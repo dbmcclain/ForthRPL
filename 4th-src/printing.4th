@@ -10,7 +10,7 @@
  : ."     [compile] " ?compile . ; immediate
 
  code error
-     (report-error sp@+) }
+     (report-error spop) }
 
  : error" [compile] " ?compile error ; immediate
 

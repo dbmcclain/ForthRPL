@@ -348,62 +348,102 @@
 (define-symbol-macro dynvar-tree        (car *dynvars*))
 
 ;; --------------------------------------------
+;; Register operations fetch & store
 
-(define-symbol-macro sp    *pstack*)
-(define-symbol-macro rp    *rstack*)
-(define-symbol-macro ip    *reg-i*)
-(define-symbol-macro fp    *frstack*)
-(define-symbol-macro up    *unwind-chain*)
+(defun invalid-register-mode (mode)
+  (error "Invalid-register-mode: ~A" mode))
 
-(define-symbol-macro tos   (car  sp))
-(define-symbol-macro nos   (cadr sp))
-(define-symbol-macro rtos  (car  rp))
-(define-symbol-macro rnos  (cadr rp))
+(defmacro @ (reg mode &optional ix)
+  (flet ((meq (sym)
+           (or (eq mode sym)
+               (string= (string mode) (string sym)))
+           ))
+    (macrolet ((mode-case (&rest clauses)
+                 `(cond ,@(mapcar (lambda (clause)
+                                    (destructuring-bind (sym &rest expansion) clause
+                                      `((meq ',sym)
+                                        ,@expansion)))
+                                  clauses)
+                        (t
+                         (invalid-register-mode mode))
+                        )))
+      (mode-case ( ]                                       ;; (@ sp ]) = TOS
+                        `(car ,reg))
+                 ( 1]                                      ;; (@ sp 1]) = NOS
+                        `(cadr ,reg))
+                 ( n]                                      ;; (@ sp n] 5) = fetch 6th element on stack
+                        `(nth ,ix ,reg))
+                 ( ]+                                      ;; (@ sp ]+) = (pop stack)
+                        `(pop ,reg))
+                 ))))
 
-;; Ideally, these would be written like SP). But Lisp won't allow this.
-(define-symbol-macro sp@   (car sp))
-(define-symbol-macro rp@   (car rp))
-(define-symbol-macro ip@   (car ip))
-(define-symbol-macro fp@   (car fp))
-(define-symbol-macro ps@   (car *pad-stack*))
+(defmacro ! (reg mode val &optional val2)
+  (flet ((meq (sym)
+           (or (eq mode sym)
+               (string= (string mode) (string sym)))
+           ))
+    (macrolet ((mode-case (&rest clauses)
+                 `(cond ,@(mapcar (lambda (clause)
+                                    (destructuring-bind (sym &rest expansion) clause
+                                      `((meq ',sym)
+                                        ,@expansion)))
+                                  clauses)
+                        (t
+                         (invalid-register-mode mode))
+                        )))
+      (mode-case ( ]                                       ;; (! sp ] 15) = store to TOS
+                        `(setf (car ,reg) ,val))
+                 ( 1]                                      ;; (! sp 1] 15) = store to NOS
+                        `(setf (cadr ,reg) ,val))
+                 ( n]                                      ;; (! sp n] 5 15) = store 15 into 6th element on stack
+                        `(setf (nth ,val ,reg) ,val2))
+                 ( -]                                      ;; (! sp -] 15)  = push 15 onto stack
+                        `(push ,val ,reg))
+                 ))))
 
-;; Ideally, these would be written like SP)+. But Lisp won't allow this.
-(define-symbol-macro sp@+  (pop sp))
-(define-symbol-macro rp@+  (pop rp))
-(define-symbol-macro ip@+  (pop ip))
-(define-symbol-macro fp@+  (pop fp))
-(define-symbol-macro ps@+  (pop *pad-stack*))
-(define-symbol-macro up@+  (pop up))
+(defmacro lea (reg addr)
+  `(setf ,reg ,addr))
 
-;; And ideally, these would be written SP-)!. But Lisp won't allow this.
-(defmacro sp-! (val)
-  `(push ,val sp))
+;; --------------------------------------------
 
-(defmacro rp-! (val)
-  `(push ,val rp))
+(define-symbol-macro sp *pstack*)
+(define-symbol-macro rp *rstack*)
+(define-symbol-macro ip *reg-i*)
+(define-symbol-macro up *unwind-chain*)
+(define-symbol-macro fp *frstack*)
+(define-symbol-macro ps *pad-stack*)
 
-(defmacro fp-! (val)
-  `(push ,val fp))
+;; --------------------------------------------
 
-(defmacro ps-! (val)
-  `(push ,val *pad-stack*))
+(define-symbol-macro tos (@ sp ]))
+(define-symbol-macro nos (@ sp 1]))
 
-(defmacro up-! (val)
-  `(push ,val up))
+(defmacro !tos (val)
+  `(! sp ] ,val))
 
+(defmacro !nos (val)
+  `(! sp 1] ,val))
 
+(defmacro spush (val)
+  `(! sp -] ,val))
 
-(defmacro !sp (val)
-  `(setf sp ,val))
+(define-symbol-macro spop (@ sp ]+))
 
-(defmacro !rp (val)
-  `(setf rp ,val))
+;; --------------------------------------------
 
-(defmacro !ip (val)
-  `(setf ip ,val))
+(define-symbol-macro rtos (@ rp ]))
+(define-symbol-macro rnos (@ rp 1]))
 
-(defmacro !fp (val)
-  `(setf fp ,val))
+(defmacro !rtos (val)
+  `(! rp ] ,val))
+
+(defmacro !rnos (val)
+  `(! rp 1] ,val))
+
+(defmacro rpush (val)
+  `(! rp -] ,val))
+
+(define-symbol-macro rpop (@ rp ]+))
 
 ;; --------------------------------------------
 
@@ -543,27 +583,27 @@
   lst)
 
 (defun forth-protect (ip)
-  (up-! (make-prot-frame
-         :ip   ip  ;; user's unwind ip
-         :rp   rp
-         :sp   sp
-         :fp   fp
-         :dp   *dynvars*
-         :cp   *catch-pt*)
-        ))
+  (! up -] (make-prot-frame
+            :ip   ip  ;; user's unwind ip
+            :rp   rp
+            :sp   sp
+            :fp   fp
+            :dp   *dynvars*
+            :cp   *catch-pt*)
+     ))
 
 (defun restore-state (state)
   ;; assumes state is PROT-FRAME
   (with-accessors ((sav-ip   prot-frame-ip)
                    (sav-rp   prot-frame-rp)
-                   (sav-sp   prot-frame-sp)
+                   ;; (sav-sp   prot-frame-sp)
                    (sav-fp   prot-frame-fp)
                    (sav-dp   prot-frame-dp)
                    (sav-cp   prot-frame-cp)) state
-    (setf *reg-i*    sav-ip
+    (setf ip         sav-ip
           ;; *pstack*  sav-sp
-          *rstack*   sav-rp
-          *frstack*  sav-fp
+          rp         sav-rp
+          fp         sav-fp
           *dynvars*  sav-dp
           *catch-pt* sav-cp)
     ))
@@ -578,10 +618,10 @@
 
 (defun forth-unwind (&optional target-state)
   (nlet iter ()
-    (when-let (state up@+)
+    (when-let (state (@ up ]+))
       (cond ((prot-frame-p state)
              (restore-state state)
-             (inner-interp ip@+))
+             (inner-interp (@ ip ]+)))
             ((dynvar-sav-p state)
              (setf *dynvars* (dynvar-sav-vars state)))
             ((dynbind-sav-p state)
@@ -598,33 +638,33 @@
                        :lfa nil
                        :cfa (lambda (self)
                               (declare (ignore self))
-                              (!ip nil)))
+                              (lea ip nil)))
         ))
 
 (defun forth-catch ()
-  (let ((fn (pop rp@)))
-    (up-! (setf *catch-pt*
-                (make-catch-sav
-                 :tag   sp@+
-                 :prot  (make-prot-frame
-                         :ip  rp@
-                         :rp  rp
-                         :sp  sp
-                         :fp  fp
-                         :dp  *dynvars*
-                         :cp  *catch-pt*))
-                ))
-    (sp-! fn)))
+  (let ((fn (pop rtos)))
+    (! up -] (setf *catch-pt*
+                  (make-catch-sav
+                   :tag   spop
+                   :prot  (make-prot-frame
+                           :ip  rtos
+                           :rp  rp
+                           :sp  sp
+                           :fp  fp
+                           :dp  *dynvars*
+                           :cp  *catch-pt*))
+                  ))
+    (spush fn)))
 
 (defun forth-uncatch ()
-  (let ((csav  up@+))
+  (let ((csav  (@ up ]+)))
     (setf *catch-pt* (prot-frame-cp (catch-sav-prot csav)))
-    (sp-! nil)
+    (spush nil)
     ))
 
 (defun forth-throw ()
-  (let* ((tag  sp@+)
-         (ans  sp@+))
+  (let* ((tag  spop)
+         (ans  spop))
     ;; We have to make this conditional on ANS, since the execution
     ;; has unknown effect on the stack, while a (THROW NIL) would
     ;; appear the same way to the code following the CATCH as a normal
@@ -636,8 +676,8 @@
             (if (eq tag (catch-sav-tag pt))
                 (progn
                   (forth-unwind pt)
-                  (sp-! ans)
-                  (inner-interp ip@+))
+                  (spush ans)
+                  (inner-interp (@ ip ]+)))
               (go-iter (prot-frame-cp (catch-sav-prot pt))))
           (error "No tag ~S" tag))
         ))))
@@ -700,7 +740,7 @@
       (print-current-word reg-w))
     (execute-word reg-w)
     (when ip
-      (go-iter ip@+))
+      (go-iter (@ ip ]+)))
     ))
 
 ;; --------------------------------------------
@@ -739,12 +779,12 @@
 
 (defun docol (self)
   ;; For : words
-  (rp-! *reg-i*)
-  (!ip (icode-of self)))
+  (rpush ip)
+  (lea ip (icode-of self)))
 
 (defun doval (self)
   ;; For data words
-  (sp-! (data-of self)))
+  (spush (data-of self)))
 
 (defun doscol (self)
   ;; For ;: words
@@ -759,10 +799,10 @@
   ;; For LOCAL vars - act like Constants
   (destructuring-bind (lvl pos)
       (data-of self)
-    (sp-! (aref (nth lvl *frstack*) pos))))
+    (spush (aref (nth lvl fp) pos))))
 
 (defun do-dynvar (self)
-  (sp-! (lookup-dynvar self)))
+  (spush (lookup-dynvar self)))
 
 ;; ----------------------------------------------------
 ;; defining words
@@ -852,13 +892,13 @@
   (defun default-jmp (obj)
     (setf (car jv)  obj
           (cadr jv) *tic-exit*)
-    (!ip jv)))
+    (lea ip jv)))
 
 (defgeneric do-jmp (self)
   (:method (self)
    (default-jmp self))
   (:method ((self <colon-def>))
-   (!ip (icode-of self))))
+   (lea ip (icode-of self))))
 
 ;; ---------------------------------------------
 
@@ -954,7 +994,7 @@
      ))
   (:method ((dst <local-accessor>) x)
    (destructuring-bind (lvl pos) (data-of dst)
-     (setf (aref (nth lvl *frstack*) pos) x)
+     (setf (aref (nth lvl fp) pos) x)
      ))
   (:method ((dst <dynvar>) x)
    (add-dynvar dst x))
@@ -1017,11 +1057,11 @@
 ;; ----------------------------------------------------
 
 (defun do-unary-op (op)
-  (setf tos (funcall op tos)))
+  (!tos (funcall op tos)))
 
 (defun do-binary-op (op)
-  (let ((opnd2 sp@+))
-    (setf tos (funcall op tos opnd2))))
+  (let ((opnd2 spop))
+    (!tos (funcall op tos opnd2))))
 
 (defun op-mapper (fn ops)
   `(progn
@@ -1115,9 +1155,9 @@
       )))
 
 (defun reset-interpreter ()
-  (setf *reg-i*     nil
-        *rstack*    nil
-        *frstack*   nil ;; leave *pstack* alone for now...
+  (setf ip   nil
+        rp   nil
+        fp   nil ;; leave *pstack* alone for now...
         *pad-stack* nil
         (fill-pointer *pad*) 0
         *display*   (list (make-frame))
@@ -1129,7 +1169,7 @@
 (defgeneric init-interpreter ()
   (:method () ;; defmethod, to allow for :after methods in metacompiler
    (reset-interpreter)
-   (!sp nil)))
+   (lea sp nil)))
 
 ;; -------------------------------------------------------------------
 
@@ -1419,7 +1459,7 @@
   (forth-compile-in v))
 
 (defun basic-push-literal (v)
-  (sp-! v))
+  (spush v))
 
 ;; -------------------------------
 ;; ... in anticipation of separate treatment of rationals and floats
@@ -1594,23 +1634,16 @@
 
 (defvar *the-forth-kernel*
   (merge-pathnames
-   #P"forth-itc-rpl-clos-forthcode.lisp" ;; should be companion file to this one...
-   (translate-logical-pathname "PROJECTS:LISP;TOOLS;FORTH;")
-   ;; #+:MAC #P"/Users/davidmcclain/projects/Lispworks/tools/Forth/forth-itc-rpl-clos-lispcode.lisp"
-   ;; #+:WINDOWS #P"c:/Projects/Lispworks/tools/Forth/forth-itc-rpl-clos-lispcode.lisp"
+   "forth-itc-rpl-clos-forthcode" ;; should be companion file to this one...
+   #P(:LISP ("tools" "Forth") "xxx.lisp")
    ))
 
 (defun goforth ()
-  (let ((*readtable* (copy-readtable)))
-    (set-macro-character #\] nil)
-    (set-macro-character #\} nil)
-    (init-dict)
-    #|
-    #+:LISPWORKS
-    (hcl:compile-file-if-needed *the-forth-kernel* :load t)
-    #-:LISPWORKS
-    |#
-    (load *the-forth-kernel*)))
+  (init-dict)
+  #+:LISPWORKS
+  (hcl:compile-file-if-needed *the-forth-kernel* :load t)
+  #-:LISPWORKS
+  (load *the-forth-kernel*))
 
 ;; ----------------------------------------------------------
 
@@ -1632,8 +1665,7 @@
 (defun src-file (fname)
   (merge-pathnames
    fname
-   (translate-logical-pathname
-    "PROJECTS:LISP;TOOLS;FORTH;4TH-SRC;")))
+   #P(:LISP ("tools" "Forth" "4th-src") "xxx.4th")))
 
 (defun inhale (fname)
   (interpret (file-string (src-file fname))))

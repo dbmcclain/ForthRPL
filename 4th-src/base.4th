@@ -23,21 +23,19 @@
  : code bl-word [compile] code{ swdef ;
 
  code ?immed ;; ( wd -- t/f )
-   (setf tos (is-immed tos)) }
+   (!tos (is-immed tos)) }
 
  ;; now we can do code defs --------------------------------------------
  ;; so generate the inner workings for defining-words
  
  code (;code)
-  (let ((behav (beh-of ip@)))
-    (setf tos
-          (derive-word '<scode-def>
+  (let ((behav (beh-of (@ ip ] ))))
+    (!tos (derive-word '<scode-def>
                        :cfa (lambda (self)
                             	(doval self)
                                 (funcall behav self))
-                       :dfa tos)	
-          ip  rp@+
-          )) }
+                       :dfa tos))
+    (lea ip rpop)) }
 
  : ;code{ compile (;code)
           [compile] code{ ; immediate
@@ -46,18 +44,16 @@
   ;; stack contains data
   ;; this performs EXIT and the follow i-code
   ;; will be the actions for the newly defined verb
-  (setf tos
-        (derive-word '<scolon-def>
+  (!tos (derive-word '<scolon-def>
                      :dfa tos
-                     :ifa ip)
-        ip rp@+
-        ) }
+                     :ifa ip))
+  (lea ip rpop) }
 
  ;;;  : (const) ;code{ }
 
  code (const)
-   (setf tos (derive-word '<constant>
-                          :dfa tos)) }
+   (!tos (derive-word '<constant>
+     	  	        :dfa tos)) }
   
  ;; handy access to the host environment... ---------------------------
  ;;
@@ -73,7 +69,7 @@
  ;;           The code is not called with any parameters.
  
  code lisp
-  (let ((e  (read-from-string sp@+)))
+  (let ((e  (read-from-string spop)))
     (funcall (compile nil `(lambda () ,e)))) }
 
  : lisp{ }-word lisp ;
@@ -84,25 +80,25 @@
 ;; --------------------------------------------
 
 code interp-string
-   	(interpret sp@+) }
+   	(interpret spop) }
 
 code load 
-      	(inhale sp@+) }
+      	(inhale spop) }
 
 ;; --------------------------------------------
 
-"core-stack.4th" load
-"dynvars.4th"    load
-"consts.4th"     load
-"structs.4th"    load
-"looping.4th"    load
-"dynops.4th"     load
-"comments.4th"   load
-"printing.4th"   load
-"lclvars.4th"    load
-"vocabs.4th"     load
-"picnum.4th"     load
-"misc.4th"       load
+"core-stack" load
+"dynvars"    load
+"consts"     load
+"structs"    load
+"looping"    load
+"dynops"     load
+"comments"   load
+"printing"   load
+"lclvars"    load
+"vocabs"     load
+"picnum"     load
+"misc"       load
 
 ;; --------------------------------------------
 ;; now give us a proper outer interpreter

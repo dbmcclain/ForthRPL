@@ -3,26 +3,26 @@
 
 -- Flow Control -----------------------------
 
-code rdrop    (pop *rstack*) }  ;; we shall return to *Your* caller, instead of to you.
+code rdrop    rpop }  ;; we shall return to *Your* caller, instead of to you.
 : maybe?      if r> continuation then rdrop ;
 
 -- TCO --------------------------------------------
 
-code (jmp)
-  (!ip ip@+) }
+code (xjmp)
+   (lea ip (@ ip ]+)) }
 ' (jmp) mark-skip
 
 code @cfa
-    (setf tos (beh-of tos)) }
+    (!tos (beh-of tos)) }
 
 code @ifa
-    (setf tos (icode-of tos)) }
+    (!tos (icode-of tos)) }
 
 : known-colon ;
 ' known-colon @cfa constant colon-beh
 
 : jmp  ' dup @cfa colon-beh 
-	eq if compile (jmp) @ifa then , ; immediate
+	eq if compile (xjmp) @ifa then , ; immediate
 
 -- Generalized Comments Recognizer ---------------
 
@@ -60,7 +60,7 @@ code @ifa
 
 
  code feature?
-     (setf tos (member tos *features*)) }
+     (!tos (member tos *features*)) }
      
  : #-IF   if skip-to-fi then ; immediate
  : #+IF   not [compile] #-IF ; immediate

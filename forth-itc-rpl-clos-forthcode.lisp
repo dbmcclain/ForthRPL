@@ -142,21 +142,21 @@
 ;; --------------------------------------------
 
 (code context
-  (sp-! *context*))
+  (spush *context*))
 
 (code current
-  (sp-! *current*))
+  (spush *current*))
 
 (code compiling
-  (sp-! *compiling*))
+  (spush *compiling*))
 
 ;; --------------------------------------------
 
 (code literal
-  (sp-! ip@+))
+  (spush (@ ip ]+)))
 
 (code exit
-  (!ip rp@+))
+  (lea ip rpop))
 
 ;; CNOP -- a replaceable nop we need a placeholder in some cases but
 ;; when compiled into an i-code list this will be replaced by the next
@@ -194,10 +194,10 @@
   (let* ((delim tos)
          (w     (next-word delim)))
     ;; (format t "~&word = ~S" w)
-    (setf tos w)))
+    (!tos w)))
 
 (code find
-  (sp-! (forth-lookup tos)))
+  (spush (forth-lookup tos)))
 
 (code quit
   (throw 'done sp))
@@ -206,19 +206,19 @@
   (let ((name tos))
     ;; (format t "~%     ~A" name)
     (if name
-        (sp-! (forth-lookup name))
+        (spush (forth-lookup name))
       (throw 'done (cdr sp))
       )))
 
 (code must-find
-  (let ((name sp@+))
+  (let ((name spop))
     (if name
-        (sp-! (must-find name))
+        (spush (must-find name))
       (report-error " EOF error"))))
 
 (code interpret
-  (let* ((ans  sp@+)
-         (arg  sp@+))
+  (let* ((ans  spop)
+         (arg  spop))
     (if ans
         (forth-handle-found ans)
       (forth-handle-not-found arg)) ))
@@ -227,7 +227,7 @@
        bl word)
 
 (code outer-again
-  (!ip (icode-of *tic-outer*)))
+  (lea ip (icode-of *tic-outer*)))
 
 (colon outer
        bl-word find-or-quit interpret outer-again)
@@ -236,16 +236,15 @@
 ;; -----------------------------------------------
 
 (code create-{
-  (sp-! (derive-word '<colon-def>)))
+  (spush (derive-word '<colon-def>)))
 
 (code create-code
-  (setf tos
-        (derive-word '<code-def>
+  (!tos (derive-word '<code-def>
                      :cfa (compile-lisp-text tos)) ))
 
 (code def
-  (let* ((name sp@+)
-         (w    sp@+))
+  (let* ((name spop)
+         (w    spop))
     (setf (name-of w) name)
     (link w)
     ))
@@ -254,27 +253,27 @@
   (immediate))
 
 (code ","
-  (forth-compile-in sp@+))
+  (forth-compile-in spop))
 
 (code compile
-  (forth-compile-in ip@+))
+  (forth-compile-in (@ ip ]+)))
 
 (code swap
   (rotatef tos nos))
 
 (code drop
-  sp@+)
+  spop)
 
 (code @
-  (setf tos (@fcell tos)))
+  (!tos (@fcell tos)))
 
 (code !
-  (let* ((loc sp@+)
-         (val sp@+))
+  (let* ((loc spop)
+         (val spop))
     (setf (@fcell loc) val)))
 
 (code =>
-  (to-oper ip@+ sp@+))
+  (to-oper (@ ip ]+) spop))
 
 ;; -------------------------------------------------------------
 ;; try supporting nested compiles...
@@ -295,7 +294,7 @@
       ;; else
       (progn
         (setf (compiling?) t)
-        (forth-compile-in sp@+))
+        (forth-compile-in spop))
       )))
 
 ;; -------------------------------------------------------------
@@ -310,7 +309,7 @@
        nil !compiling )
 (immediate)
 
-(colon "]"   ;; quoted form demande by SBCL
+(colon ]
        t !compiling )
 
 (colon set-current-context
@@ -319,10 +318,10 @@
 (colon {
        push-compile-context
        create-{
-       set-current-context "]" )  ;; quoted form demanded by SBCL
+       set-current-context ] )
 (immediate)
 
-(colon "}"   ;; quoted form demande by SBCL
+(colon }
         compile exit
         [  import-icode
         set-current-context
@@ -340,7 +339,7 @@
 ;; ... the rest directly in Forth...
 ;; ---------------------------------------------------------
 
-(inhale "base.4th")
+(inhale "base")
 
 ;; --------------------------------------------
 

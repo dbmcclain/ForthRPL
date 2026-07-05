@@ -10,13 +10,13 @@
      drop r> drop ;
 
  code <env
-    (fp-! sp@+) }
+    (! fp -] spop) }
 
  code env>
-    fp@+ }
+    (@ fp ]+) }
 
  code create-locals-frame
-    (setf (frame-locals (car *display*)) sp@+) }
+    (setf (frame-locals (car *display*)) spop) }
 
 ;; local vars [2] -----------------------------------------------
 
@@ -49,7 +49,7 @@ Example:
 ;; possibly cleaner way to do things...
 
 code :->;:  ;; ( pend-: nlocals -- pend-;: )
-   (let ((nel  sp@+))
+   (let ((nel  spop))
      (change-class tos '<scolon-def>
                    :cfa       (ensure-compiled-function 'doscol)
                    :dfa       nel
@@ -79,10 +79,10 @@ code :->;:  ;; ( pend-: nlocals -- pend-;: )
 ;; Parameterized Functional Closures
 
  code @env
-     (sp-! *frstack*) }
+     (spush fp) }
 
  code !env
-     (!fp sp@+) }
+     (lea fp spop) }
     
  : make-closure ( fn env -- clos )
        2vec ;: @env <r
@@ -94,7 +94,7 @@ code :->;:  ;; ( pend-: nlocals -- pend-;: )
     rtos)+ @env ?dup-if make-closure then ;
 
   code toplevel?
-    (sp-! (toplevel?)) }
+    (spush (toplevel?)) }
 
   : closure?
       toplevel? ifnot compile (closure) then ;

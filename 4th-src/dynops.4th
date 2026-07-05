@@ -5,7 +5,7 @@ code rtos)+
    ;; when performed in a colon-def, assuming that def was called by
    ;; another colon-def, this fetches the next ip-code op from caller,
    ;; and advances the return address.
-   (sp-! (pop rp@)) }
+   (spush (pop rtos)) }
 
 code >r<
    ;; when performed in a colon-def, assuming that def was called by
@@ -16,19 +16,19 @@ code >r<
 code <<r
    ;; stash stack item beneath ret addr
    ;; equiv of inline: r> swap <r <r
-   (rp-! rtos)
-   (setf rnos sp@+) }
+   (rpush rtos)
+   (!rnos spop) }
 
 code sp><rp
    ;; exchange TOS with RTOS
    (rotatef tos rtos) }
    
 code .r
-  (inspect rp) }
+  (inspect rtos) }
 
 code (>>r<<)
     (rotatef rtos rnos) ;; rswap
-    (!ip sp@+) }
+    (lea ip spop) }
     
 : >>r<<   ( fn -- )
     ;; Expect an ip continuation on stack. Re-order return addrs, to
@@ -55,10 +55,10 @@ code (>>r<<)
 ;; Unwind-Protect
 
 code (protect)
-    (forth-protect (cdr rp@)) }
+    (forth-protect (cdr rtos)) }
 
 code (pop-prot)
-   (let ((state up@+))
+   (let ((state (@ up ]+)))
      (assert (prot-frame-p state))
      (restore-state state)) }
      
@@ -86,12 +86,12 @@ code (pop-prot)
 ;;
 
 code (rebinding)
-  (up-! (make-dynvar-sav                     ;; save current bindings for restore
-         :vars *dynvars*))
+  (! up -] (make-dynvar-sav                     ;; save current bindings for restore
+       		  :vars *dynvars*))
   (push dynvar-tree *dynvars*) }             ;; copy bindings into new context
 
 code (pop-rebindings)
-  (let ((sav up@+))
+  (let ((sav (@ up ]+)))
     (assert (dynvar-sav-p sav))
     (setf *dynvars* (dynvar-sav-vars sav))) }
 
@@ -141,10 +141,10 @@ code (dyn-bind)
   ;; construct a dyn-restore list, exchange with RTOS to place
   ;; the restore struct on the r-stack, and the return addr on the p-stack.
   ;; Will be used by the following [ PROTECT >>R<< ].
-  (nlet iter ((lst  sp@+)
+  (nlet iter ((lst  spop)
               (acc  nil))
     (if (endp lst)
-        (up-! (make-dynbind-sav :lst acc))
+        (! up -] (make-dynbind-sav :lst acc))
       (destructuring-bind (var val . rest) lst
         (go-iter rest
                  (list* var
@@ -155,7 +155,7 @@ code (dyn-bind)
 code (dyn-restore)
    ;; Expect a dyn-restore list on top of R-stack.
    ;; Restore the vars in the list, popping the r-stack.
-   (restore-dynbinds up@+) }
+   (restore-dynbinds (@ up ]+)) }
    
 ;;; : dyn-bind ( vec -- sav )
 ;;;     (dyn-bind) r>

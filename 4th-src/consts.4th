@@ -2,7 +2,7 @@
 
   code .
    (with-users-base
-    (princ sp@+)) }
+    (princ spop)) }
 
  : !base   => base ;
  : decimal #10r10 !base ;
@@ -74,12 +74,12 @@
 
  ;; printing and introspection -------------------------------------
 
- code inspect (inspect sp@+) }
+ code inspect (inspect spop) }
  code cr      (terpri) }
  code space   (princ #\space) }
- code cls     (!sp nil) }
+ code cls     (lea sp nil) }
  
- code (show) (decompile sp@+) }
+ code (show) (decompile spop) }
  : show ' (show) ;
 
  code .s

@@ -2,32 +2,32 @@
 ;; PAD and numeric output formatting
 
 code pad
-   (sp-! *pad*) }
+   (spush *pad*) }
           
 code !fill-ptr
-     (let* ((arr   sp@+)
-            (val   sp@+))
+     (let* ((arr   spop)
+            (val   spop))
        (setf (fill-pointer arr) val)) }
 
 code (c,)
-   (let* ((arr  sp@+)
-          (val  sp@+))
+   (let* ((arr  spop)
+          (val  spop))
      (vector-push-extend val arr)) }
    
 code ch->code
-   (setf tos (char-code tos)) }
+   (!tos (char-code tos)) }
 
 code code->ch
-   (setf tos (code-char tos)) }
+   (!tos (code-char tos)) }
 
 : <pad  0 pad !fill-ptr ;
 : c,    pad (c,) ;
 : pad>  pad ;
 code <<pad
-   (ps-! (fill-pointer *pad*)) }
+   (! ps -] (fill-pointer *pad*)) }
 code pad>>
-   (sp-! (subseq *pad* ps@))
-   (setf (fill-pointer *pad*) ps@+) }
+   (spush (subseq *pad* (@ ps ])))
+   (setf (fill-pointer *pad*) (@ ps ]+)) }
     
 : <#  <pad ;
 : #>  pad> reverse ;

@@ -3,10 +3,10 @@
 ;; vocabularies ------------------------------------------------
 
  code latest
-       (sp-! (last-def)) }
+       (spush (last-def)) }
 
  code (vocabulary)
-       (sp-! (derive-word '<vocabulary>
+       (spush (derive-word '<vocabulary>
 	        :dfa (vector nil (current-voc)) )) }
                     
  : vocabulary   ( -- )
@@ -17,30 +17,30 @@
      context @ current ! ;
 
  code voc-of 
-   (let ((wp sp@+))
-     (sp-! (voc-of-wrd wp))) }
+   (let ((wp spop))
+     (spush (voc-of-wrd wp))) }
 
 ;; --------------------------------------------
 
  code @nfa
-    (setf tos (name-of tos)) }
+    (!tos (name-of tos)) }
 
  code @lfa
-    (setf tos (prev-of tos)) }
+    (!tos (prev-of tos)) }
 
  code @dfa ;; as in: ' wwww @dfa
-    (setf tos (data-of tos)) }
+    (!tos (data-of tos)) }
 
 #| ;; already defined earlier
  code @cfa
-    (setf tos (beh-of tos)) }
+    (!tos (beh-of tos)) }
 
  code @ifa
-    (setf tos (icode-of tos)) }
+    (!tos (icode-of tos)) }
 |#   
 
   code @vfa
-    (setf tos (mempos-of tos)) }
+    (!tos (mempos-of tos)) }
 
 : name-of   @nfa ;
 : prev-of   @lfa ;
@@ -50,34 +50,34 @@
 : mempos-of @vfa ;
 
  code !nfa
-      (let* ((w        sp@+)    ;; LET* because we need sequential oper
-             (new-name sp@+))
+      (let* ((w        spop)    ;; LET* because we need sequential oper
+             (new-name spop))
         (setf (name-of w) new-name)) }
 
  code !lfa
-      (let* ((w        sp@+)
-             (new-prev sp@+))
+      (let* ((w        spop)
+             (new-prev spop))
         (setf (prev-of w) new-prev)) }
 
  code !cfa
-       (let* ((w        sp@+)
-              (new-code sp@+))
+       (let* ((w        spop)
+              (new-code spop))
          (setf (beh-of w) new-code)) }
        
 
  code !ifa ;; ( val w -- )
-      (let* ((w   sp@+)
-             (val sp@+))
+      (let* ((w   spop)
+             (val spop))
         (setf (icode-of w) val)) }
 
  code !dfa ;; ( val w -- )
-      (let* ((w   sp@+)
-             (val sp@+))
+      (let* ((w   spop)
+             (val spop))
         (setf (data-of w) val)) }
 
  code !vfa
-       (let* ((w   sp@+)
-              (val sp@+))
+       (let* ((w   spop)
+              (val spop))
           (setf (mempos-of w) val)) }
 
 : !name-of    !nfa ;
@@ -244,15 +244,15 @@ parent vocabulary, and no LFA predecessor in the dictionary tree.
 ;; Some useful dictionary probing words
 
 code next-word-this-line
-	(sp-! (next-word-this-line #\space)) }
+	(spush (next-word-this-line #\space)) }
 
  : exists?
      ;; return true if word on stack exists in the dictionary
      bl-word find swap-drop ;
 
  code string-contains
-   (let ((str  (string sp@+)))
-     (setf tos (search tos str :test #'char-equal))) }
+   (let ((str  (string spop)))
+     (!tos (search tos str :test #'char-equal))) }
 
  : last-def  ( voc -- wrd )
      data-of fst ;
@@ -270,7 +270,7 @@ code next-word-this-line
      repeat ;
 
  : catalog 
-     code{ (sp-! (catalog)) }
+     code{ (spush (catalog)) }
      begin
      ?dup-while
 	pop . cr
@@ -278,7 +278,7 @@ code next-word-this-line
 
  : vlist
     next-word-this-line ?dup
-    if code{ (setf tos (forth-apropos tos)) } .list
+    if code{ (!tos (forth-apropos tos)) } .list
     else drop code{ (vlist) } 
     then ;
 
@@ -301,16 +301,16 @@ code next-word-this-line
 ;; --------------------------------------------
 
  code dict-index
-   (sp-! *mempos*) }
+   (spush *mempos*) }
 
  code !dict-index
-   (setf *mempos* sp@+) }
+   (setf *mempos* spop) }
 
 code vocabs
-  (sp-! *vocabs*) }
+  (spush *vocabs*) }
 
 code !vocabs
-  (setf *vocabs* sp@+) }
+  (setf *vocabs* spop) }
 
 : trim-words-in-voc  ( voc height -- )
    <r @dfa dup fst
@@ -407,9 +407,9 @@ code !vocabs
      @vfa gilded-state @ ?dup if < else 2drop nil then ;  
      
  code mem 
-   (let* ((lst sp@+)
-          (wp  sp@+))
-      (sp-! (member wp lst))) }
+   (let* ((lst spop)
+          (wp  spop))
+      (spush (member wp lst))) }
 
  : voc-vis? 
      @ vocabs mem not ;
